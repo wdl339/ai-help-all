@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import queue
 import threading
 from datetime import datetime
@@ -26,6 +27,36 @@ from .summarizer import summarize_paper
 _STATIC_DIR = Path(__file__).parent / "static"
 _DIGESTS_DIR = Path("digests")
 
+# 用 spawn 子进程跑流水线：避免 fork 多线程进程的隐患，且可被 terminate() 立即杀掉
+_MP = mp.get_context("spawn")
+
+
+def _pipeline_process(q, config_path: str, refresh: bool, dry_run: bool,
+                      ref_date: str | None, days_back: int | None) -> None:
+    """在独立子进程里运行流水线；事件通过跨进程队列 q 回传给父进程。
+
+    放在模块顶层以便 spawn 方式 pickle。被父进程 terminate() 时整个进程
+    （含所有在途 LLM/arxiv 请求）会被操作系统立即杀掉。
+    """
+    def emit(event_type: str, payload: dict) -> None:
+        q.put({"type": event_type, "payload": payload})
+
+    try:
+        cfg = load_config(config_path)
+        if days_back and days_back > 0:
+            cfg.arxiv.days_back = days_back
+        run_pipeline(cfg, emit, dedup=not refresh, dry_run=dry_run, ref_date=ref_date or None)
+    except Exception as e:  # noqa: BLE001
+        try:
+            q.put({"type": "error", "payload": {"message": f"运行失败: {e}"}})
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        try:
+            q.put({"_control": "end"})
+        except Exception:  # noqa: BLE001
+            pass
+
 
 class RunManager:
     """单例运行管理器：一个进程同一时刻最多一个运行，事件可被多次/延迟订阅。"""
@@ -37,6 +68,8 @@ class RunManager:
         self.running = False
         self.run_id = 0
         self._seq = 0
+        self.params: dict = {}   # 当前运行参数（日期/天数等），供刷新后回填
+        self._proc: mp.process.BaseProcess | None = None   # 当前运行的子进程
 
     def _emit(self, event_type: str, payload: dict) -> None:
         with self.lock:
@@ -48,7 +81,7 @@ class RunManager:
 
     def start(self, config_path: str, *, refresh: bool, dry_run: bool,
               ref_date: str | None = None, days_back: int | None = None) -> bool:
-        """启动一次运行；若已有运行返回 False（调用方应改为订阅 /api/stream）。"""
+        """启动一次运行（独立子进程）；若已有运行返回 False。"""
         with self.lock:
             if self.running:
                 return False
@@ -56,21 +89,66 @@ class RunManager:
             self.run_id += 1
             self.events = []
             self._seq = 0
+            self.params = {"date": ref_date or "", "days_back": days_back or 0,
+                           "refresh": refresh, "dry_run": dry_run}
 
-        def worker() -> None:
+        mpq: mp.Queue = _MP.Queue()
+        proc = _MP.Process(
+            target=_pipeline_process,
+            args=(mpq, config_path, refresh, dry_run, ref_date, days_back),
+            daemon=True,
+        )
+        proc.start()
+        with self.lock:
+            self._proc = proc
+        threading.Thread(target=self._reader, args=(mpq, proc), daemon=True).start()
+        return True
+
+    def _reader(self, mpq: "mp.Queue", proc: "mp.process.BaseProcess") -> None:
+        """把子进程的事件桥接到订阅者；子进程结束（正常或被杀）后收尾。"""
+        got_end = False
+        while True:
             try:
-                cfg = load_config(config_path)
-                if days_back and days_back > 0:
-                    cfg.arxiv.days_back = days_back
-                run_pipeline(cfg, self._emit, dedup=not refresh, dry_run=dry_run, ref_date=ref_date or None)
-            except Exception as e:  # noqa: BLE001
-                self._emit("error", {"message": f"运行失败: {e}"})
-            finally:
-                self._emit("_end", {})
-                with self.lock:
-                    self.running = False
+                item = mpq.get(timeout=0.3)
+            except queue.Empty:
+                if not proc.is_alive():
+                    while True:  # 最后再清空一次队列
+                        try:
+                            item = mpq.get_nowait()
+                        except queue.Empty:
+                            break
+                        if item.get("_control") == "end":
+                            got_end = True
+                        else:
+                            self._emit(item["type"], item["payload"])
+                    break
+                continue
+            if item.get("_control") == "end":
+                got_end = True
+                break
+            self._emit(item["type"], item["payload"])
 
-        threading.Thread(target=worker, daemon=True).start()
+        proc.join(timeout=2)
+        if not got_end:   # 没收到正常结束标记 => 被强制终止
+            self._emit("done", {"count": 0, "stopped": True, "papers": []})
+        self._emit("_end", {})
+        with self.lock:
+            self.running = False
+            self._proc = None
+
+    def cancel(self) -> bool:
+        """立即终止当前运行的子进程（含所有在途请求）。返回是否确有运行。"""
+        with self.lock:
+            proc = self._proc
+            if not self.running or proc is None:
+                return False
+        try:
+            proc.terminate()        # SIGTERM：操作系统立即杀掉子进程
+            proc.join(timeout=3)
+            if proc.is_alive():
+                proc.kill()         # 兜底：SIGKILL
+        except Exception:  # noqa: BLE001
+            pass
         return True
 
     def subscribe(self) -> tuple[list[dict], queue.Queue | None]:
@@ -90,7 +168,8 @@ class RunManager:
 
     def status(self) -> dict:
         with self.lock:
-            return {"running": self.running, "run_id": self.run_id, "events": len(self.events)}
+            return {"running": self.running, "run_id": self.run_id,
+                    "events": len(self.events), "params": dict(self.params)}
 
 
 def _paper_from_dict(d: dict) -> Paper:
@@ -222,6 +301,11 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
             ref_date=date or None, days_back=days_back or None,
         )
         return JSONResponse({"started": started, **manager.status()})
+
+    @app.get("/api/stop")
+    def stop() -> JSONResponse:
+        stopped = manager.cancel()
+        return JSONResponse({"stopping": stopped, **manager.status()})
 
     @app.get("/api/stream")
     def stream() -> StreamingResponse:

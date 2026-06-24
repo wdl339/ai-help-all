@@ -84,7 +84,7 @@ class Config:
     arxiv: ArxivConfig = field(default_factory=ArxivConfig)
     interests: str = ""
     relevance_threshold: int = 6
-    # 每天（按分界小时对齐的自然日）最多自动 AI 总结多少篇
+    # 每份日报（每天一份）最多自动 AI 总结多少篇；多天会逐天各出一份日报
     max_summarize: int = 15
     # 是否下载 PDF 首页提取作者单位/发表机构（关掉可省下载时间）
     fetch_affiliations: bool = True

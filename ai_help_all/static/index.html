@@ -70,6 +70,8 @@
   .pill { background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
   .badge { font-weight: 700; border-radius: 6px; padding: 0 7px; font-size: 12px; color: #0b0d11; }
   .b-hi { background: var(--green); } .b-mid { background: var(--yellow); } .b-lo { background: #5a6472; color: #fff; }
+  .day-header { margin: 18px 0 12px; padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 6px; font-weight: 700; font-size: 14px; }
+  .day-header .sub { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
   .card .top { display: flex; gap: 10px; align-items: flex-start; }
   .card .title { font-size: 15.5px; font-weight: 650; margin: 0; flex: 1; }
@@ -81,6 +83,9 @@
   .summary.loading { color: var(--muted); font-style: italic; }
   button.retry { background: var(--accent2); color: #fff; border: none; padding: 4px 12px; border-radius: 6px; font-size: 12.5px; cursor: pointer; margin-left: 6px; }
   button.retry:hover { opacity: .9; }
+  details.sum-more { margin-top: 8px; }
+  details.sum-more > summary { cursor: pointer; color: var(--accent); font-size: 12.5px; user-select: none; }
+  details.sum-more[open] > summary { margin-bottom: 6px; }
   details.abs { margin-top: 10px; }
   details.abs > summary { cursor: pointer; color: var(--accent); font-size: 13px; user-select: none; }
   details.abs .abs-en, details.abs .abs-zh { color: var(--muted); font-size: 13px; margin-top: 8px; line-height: 1.7; }
@@ -107,6 +112,7 @@
     <label class="chk" title="忽略历史去重，重新处理"><input type="checkbox" id="refresh" /> 重新生成</label>
     <label class="chk"><input type="checkbox" id="dryrun" /> 试跑</label>
     <button id="runBtn">▶ 运行</button>
+    <button id="stopBtn" class="ghost" style="display:none">■ 停止</button>
   </div>
 </header>
 <main>
@@ -131,14 +137,56 @@
     <div class="bar"><div id="sumBar"></div></div>
   </div>
 
-  <h2 style="color:var(--muted);font-size:14px" id="resultsHead" class="hidden">入选论文</h2>
+  <div id="resultsHead" class="hidden" style="display:flex;align-items:center;gap:10px;margin:8px 0">
+    <h2 style="color:var(--muted);font-size:14px;margin:0">入选论文</h2>
+    <span style="color:var(--muted);font-size:12.5px">排序</span>
+    <select id="sortMode" style="padding:4px 8px">
+      <option value="score">按分数</option>
+      <option value="summarized">已总结优先</option>
+    </select>
+  </div>
   <div id="results"></div>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let currentDate = "";   // 当前展示/运行对应的日报日期，用于单篇「重新总结」
+let currentDate = "";   // 历史查看/单天运行对应的日报日期
+let currentDay = "";    // 多天运行时，当前正在处理的那一天
+let currentCardsEl = null;   // 当前天的卡片容器
 let boundaryHour = 8, tzOffset = 8;   // 来自配置：分界小时 / 时区偏移
+
+// 新建一个"天"的分区（含可选标题 + 卡片容器），返回卡片容器
+function newDaySection(date, index, total) {
+  const sec = document.createElement("div");
+  sec.className = "day-section";
+  if (total > 1) {
+    const h = document.createElement("div");
+    h.className = "day-header";
+    h.innerHTML = `📅 ${date} <span class="sub">第 ${index}/${total} 天</span>`;
+    sec.appendChild(h);
+  }
+  const cardsEl = document.createElement("div");
+  cardsEl.className = "day-cards";
+  sec.appendChild(cardsEl);
+  $("results").appendChild(sec);
+  currentCardsEl = cardsEl;
+  return cardsEl;
+}
+
+// 按当前选择的规则给每个"天"分区内的卡片排序
+function applySort() {
+  const mode = $("sortMode") ? $("sortMode").value : "score";
+  document.querySelectorAll(".day-cards").forEach(container => {
+    const items = Array.from(container.querySelectorAll(":scope > .card"));
+    items.sort((a, b) => {
+      const sa = parseInt(a.dataset.score || "0"), sb = parseInt(b.dataset.score || "0");
+      const ma = parseInt(a.dataset.summarized || "0"), mb = parseInt(b.dataset.summarized || "0");
+      if (mode === "summarized" && ma !== mb) return mb - ma;   // 已总结的排前面
+      return sb - sa;                                            // 再按分数降序
+    });
+    items.forEach(it => container.appendChild(it));
+  });
+}
 const STAGES = [
   ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
   ["summarize", "生成总结"], ["push", "推送/归档"],
@@ -198,12 +246,15 @@ function makeCard(p) {
       <div class="abs-zh"></div>
       <div class="abs-en"><b>Abstract (EN)</b>: ${escapeHtml(p.abstract || "")}</div>
     </details>`;
-  $("results").appendChild(el);
+  el.dataset.score = p.score;
+  el.dataset.summarized = summaryState(p) === "ok" ? "1" : "0";
+  (currentCardsEl || $("results")).appendChild(el);
   cards[p.short_id] = {
     el,
     summaryEl: el.querySelector(".summary"),
     affEl: el.querySelector(".aff-val"),
     absZhEl: el.querySelector(".abs-zh"),
+    date: p.date || currentDate,   // 该篇所属日报日期，用于「重新/生成总结」
   };
   renderSummaryArea(p.short_id, p);
   return cards[p.short_id];
@@ -221,14 +272,25 @@ function summaryState(p) {
   return p.will_summarize ? "pending" : "none";
 }
 
+// 把总结拆成“一句话总结”（常显）与其余部分（折叠）
+function splitSummary(text) {
+  const t = (text || "").trim();
+  const idx = t.indexOf("**研究问题**");
+  if (idx > 0) return { head: t.slice(0, idx).trim(), body: t.slice(idx).trim() };
+  return { head: t, body: "" };
+}
+
 function renderSummaryArea(short_id, p) {
   const c = cards[short_id];
   if (!c) return;
   const el = c.summaryEl;
   const st = summaryState(p);
   el.classList.toggle("loading", st === "pending");
+  if (c.el) c.el.dataset.summarized = st === "ok" ? "1" : "0";
   if (st === "ok") {
-    el.innerHTML = renderSummary(p.summary);
+    const { head, body } = splitSummary(p.summary);
+    el.innerHTML = renderSummary(head) +
+      (body ? `<details class="sum-more"><summary>展开研究问题 / 方法 / 亮点</summary>${renderSummary(body)}</details>` : "");
   } else if (st === "pending") {
     el.innerHTML = `<span class="spinner"></span>总结生成中…`;
   } else if (st === "failed") {
@@ -260,7 +322,8 @@ async function retrySummary(short_id) {
   c.summaryEl.classList.add("loading");
   c.summaryEl.innerHTML = `<span class="spinner"></span>重新总结中…`;
   try {
-    const r = await (await fetch(`/api/resummarize?short_id=${encodeURIComponent(short_id)}&date=${encodeURIComponent(currentDate || "")}`)).json();
+    const d = c.date || currentDate || "";
+    const r = await (await fetch(`/api/resummarize?short_id=${encodeURIComponent(short_id)}&date=${encodeURIComponent(d)}`)).json();
     if (r.error) {
       c.summaryEl.classList.remove("loading");
       c.summaryEl.innerHTML = `<span style="color:var(--red)">${escapeHtml(r.error)}</span> ` +
@@ -277,6 +340,8 @@ async function retrySummary(short_id) {
 
 function resetUI() {
   cards = {};
+  currentDay = "";
+  currentCardsEl = null;
   $("results").innerHTML = "";
   $("log").innerHTML = "";
   $("scored").innerHTML = "";
@@ -293,6 +358,19 @@ function resetUI() {
 function handle(ev) {
   const { type, payload } = ev;
   switch (type) {
+    case "day_start": {
+      currentDay = payload.date;
+      currentDate = payload.date;
+      $("resultsHead").classList.remove("hidden");
+      // 每天开始：重置阶段与进度条/打分流（但保留已完成天的结果卡片），并新建该天分区
+      initStages();
+      $("scored").innerHTML = ""; $("scoreBar").style.width = "0"; $("sumBar").style.width = "0";
+      $("scoreProg").textContent = ""; $("sumProg").textContent = "";
+      $("scorePanel").classList.add("hidden"); $("sumPanel").classList.add("hidden");
+      newDaySection(payload.date, payload.index, payload.total);
+      log(`===== 处理 ${payload.date}（第 ${payload.index}/${payload.total} 天）=====`);
+      break;
+    }
     case "stage":
       setStage(payload.name, payload.status, payload.message);
       log(`[${payload.name}] ${payload.message || payload.status}`);
@@ -318,6 +396,7 @@ function handle(ev) {
       $("resultsHead").classList.remove("hidden");
       const ps = payload.papers || [];
       ps.forEach(makeCard);
+      applySort();
       const willSum = ps.filter(p => p.will_summarize).length;
       log(`命中 ${ps.length} 篇（${willSum} 篇将生成 AI 总结，其余保留，可按需生成）`);
       break;
@@ -330,13 +409,16 @@ function handle(ev) {
     }
     case "paper_summarized":
       fillCard(payload.short_id, payload);
+      if ($("sortMode") && $("sortMode").value === "summarized") applySort();
       break;
-    case "dry_run_candidates":
+    case "dry_run_candidates": {
       $("resultsHead").classList.remove("hidden");
-      $("results").innerHTML = (payload.papers||[]).map(p =>
+      const frag = (payload.papers||[]).map(p =>
         `<div class="card"><div class="meta">[${escapeHtml((p.categories||[]).join(", "))}]</div>
          <h3 class="title">${escapeHtml(p.title)}</h3></div>`).join("");
+      (currentCardsEl || $("results")).insertAdjacentHTML("beforeend", frag);   // 追加到当天分区
       break;
+    }
     case "pushed":
       if (payload.date) currentDate = payload.date;
       log(`已归档: ${payload.json || ""}${payload.markdown ? "  " + payload.markdown : ""}`);
@@ -347,13 +429,14 @@ function handle(ev) {
     case "error":
       log(payload.message, true);
       break;
-    case "done":
-      if (payload.summarized !== undefined)
-        log(`完成 ✅ 保留 ${payload.count} 篇，AI 总结 ${payload.summarized} 篇`);
-      else
-        log(`完成 ✅ 共 ${payload.count} 篇`);
+    case "done": {
+      const ds = payload.days && payload.days > 1 ? `（${payload.days} 天，各自独立日报）` : "";
+      if (payload.stopped) log(`⏹ 已停止 共 ${payload.count} 篇${ds}`, true);
+      else log(`完成 ✅ 共 ${payload.count} 篇${ds}`);
+      loadHistory();   // 刷新历史下拉，纳入本次新生成的日报
       finish();
       break;
+    }
   }
 }
 
@@ -367,6 +450,17 @@ function updateBtn() {
   $("runBtn").disabled = false;
   if (!running) $("runBtn").textContent = "▶ 运行";
   else $("runBtn").textContent = attached ? "● 运行中" : "● 查看进度";
+  $("stopBtn").style.display = running ? "" : "none";
+  if (!running) { $("stopBtn").disabled = false; $("stopBtn").textContent = "■ 停止"; }
+}
+
+async function onStopClick() {
+  $("stopBtn").disabled = true;
+  $("stopBtn").textContent = "停止中…";
+  try { await fetch("/api/stop"); } catch {}
+  // 实际结束由后台的 _end 事件触发 finish()
+  log("⏹ 已立即终止运行进程。");
+  setTimeout(() => { $("stopBtn").disabled = false; $("stopBtn").textContent = "■ 停止"; }, 1500);
 }
 
 function maybePoll() {
@@ -438,7 +532,7 @@ async function loadConfig() {
     if (c.today && !$("runDate").value) { $("runDate").value = c.today; currentDate = c.today; }
     if (c.days_back && !$("runDaysBack").value) $("runDaysBack").value = c.days_back;
     const hh = String(boundaryHour).padStart(2, "0");
-    $("cfg").innerHTML = `分类 <b>${c.categories.join(" / ")}</b> · 分数阈值 <b>${c.relevance_threshold}</b> · 每天总结上限 <b>${c.max_summarize}</b> 篇 · 筛选 <b>${escapeHtml(c.filter_model)}</b> / 总结 <b>${escapeHtml(c.summarize_model)}</b> · 并发 <b>${c.max_concurrency}</b>`;
+    $("cfg").innerHTML = `抓取分类 <b>${c.categories.join(" / ")}</b> · 分数阈值 <b>${c.relevance_threshold}</b> · 每份日报总结上限 <b>${c.max_summarize}</b> 篇 · 筛选模型 <b>${escapeHtml(c.filter_model)}</b> / 总结模型 <b>${escapeHtml(c.summarize_model)}</b> · 并发 <b>${c.max_concurrency}</b>`;
     updateWinHint();
   } catch { $("cfg").textContent = "无法加载配置。"; }
 }
@@ -460,6 +554,7 @@ async function loadHistory() {
   try {
     const h = await (await fetch("/api/history")).json();
     const sel = $("history");
+    sel.innerHTML = '<option value="">历史日报…</option>';   // 先清空再填，避免重复
     (h.digests || []).forEach(d => {
       const o = document.createElement("option");
       o.value = d.date; o.textContent = `${d.date} (${d.count} 篇)`;
@@ -477,27 +572,38 @@ async function showHistory(date) {
   const d = await (await fetch("/api/digest/" + date)).json();
   if (d.error) { log("加载失败: " + d.error, true); return; }
   $("resultsHead").classList.remove("hidden");
+  newDaySection(date, 1, 1);
   (d.papers || []).forEach(p => {
-    makeCard(p);
+    makeCard({ ...p, date });
     fillCard(p.short_id, p);
   });
+  applySort();
   log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
   if (running) log("提示：后台仍在运行，点右上角「查看进度」可返回实时进度。");
 }
 
-// 页面加载时若后台正在运行，自动接回进度
+// 页面加载时若后台正在运行，自动接回进度，并回填正在运行的日期/天数
 async function initStatus() {
   try {
     const s = await (await fetch("/api/status")).json();
-    if (s.running) { running = true; attachStream(); }
+    if (s.running) {
+      running = true;
+      const pr = s.params || {};
+      if (pr.date) { $("runDate").value = pr.date; currentDate = pr.date; }
+      if (pr.days_back) $("runDaysBack").value = pr.days_back;
+      updateWinHint();
+      attachStream();
+    }
   } catch {}
   updateBtn();
 }
 
 $("runBtn").addEventListener("click", onRunClick);
+$("stopBtn").addEventListener("click", onStopClick);
 $("history").addEventListener("change", (e) => showHistory(e.target.value));
 $("runDate").addEventListener("change", updateWinHint);
 $("runDaysBack").addEventListener("input", updateWinHint);
+$("sortMode").addEventListener("change", applySort);
 initStages();
 loadConfig();
 loadHistory();

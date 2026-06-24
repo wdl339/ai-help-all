@@ -9,6 +9,7 @@ import re
 import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Callable
 
 from .arxiv_crawler import Paper
 from .config import Config
@@ -107,15 +108,22 @@ def summarize_all(
     cfg: Config,
     papers: list[Paper],
     emit: Emitter | None = None,
+    cancel: Callable[[], bool] | None = None,
 ) -> list[Paper]:
-    """并发地为每篇论文生成总结/翻译/单位（每篇一个 LLM 请求）。"""
+    """并发地为每篇论文生成总结/翻译/单位（每篇一个 LLM 请求）。
+
+    cancel(): 返回 True 时停止提交并尽快返回（不等待在途请求）。
+    """
     emit = emit or noop_emit
+    cancel = cancel or (lambda: False)
     total = len(papers)
     done = 0
     lock = threading.Lock()
     workers = max(1, min(cfg.llm.max_concurrency, total))
 
     def work(p: Paper) -> Paper:
+        if cancel():
+            return p
         try:
             summarize_paper(llm, cfg, p)
         except RuntimeError as e:
@@ -123,9 +131,13 @@ def summarize_all(
             p.summary = "(总结生成失败)"
         return p
 
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = [ex.submit(work, p) for p in papers]
+    ex = ThreadPoolExecutor(max_workers=workers)
+    futures = [ex.submit(work, p) for p in papers]
+    try:
         for fut in as_completed(futures):
+            if cancel():
+                ex.shutdown(wait=False, cancel_futures=True)
+                break
             p = fut.result()
             with lock:
                 done += 1
@@ -140,4 +152,6 @@ def summarize_all(
                     "affiliations": p.affiliations,
                 },
             )
+    finally:
+        ex.shutdown(wait=False)
     return papers

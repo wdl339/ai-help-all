@@ -16,7 +16,9 @@ def make_print_emitter() -> Emitter:
     """给 CLI 用：把事件格式化成中文日志行打印。"""
 
     def emit(event_type: str, payload: dict[str, Any]) -> None:
-        if event_type == "stage":
+        if event_type == "day_start":
+            print(f"\n===== 处理 {payload.get('date')}（第 {payload.get('index')}/{payload.get('total')} 天）=====")
+        elif event_type == "stage":
             name = payload.get("name", "")
             status = payload.get("status", "")
             msg = payload.get("message", "")
@@ -32,6 +34,8 @@ def make_print_emitter() -> Emitter:
         elif event_type == "error":
             print(f"  [错误] {payload.get('message', '')}")
         elif event_type == "done":
-            print(f"完成 ✅ 共 {payload.get('count', 0)} 篇")
+            days = payload.get("days")
+            extra = f"（{days} 天）" if days and days > 1 else ""
+            print(f"完成 ✅ 共 {payload.get('count', 0)} 篇{extra}")
 
     return emit

@@ -5,6 +5,7 @@ import json
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Callable
 
 from .arxiv_crawler import Paper
 from .config import Config
@@ -76,13 +77,16 @@ def score_papers(
     cfg: Config,
     papers: list[Paper],
     emit: Emitter | None = None,
+    cancel: Callable[[], bool] | None = None,
 ) -> list[Paper]:
     """并发地对所有论文打分，写回 score/reason，返回原列表(已就地修改)。
 
     各批次相互独立，用线程池并发提交；实际并发度仍受 LLMClient 内置的
     每分钟请求/ token 限速器约束，因此既快又不会超额度。
+    cancel(): 返回 True 时停止提交并尽快返回（不等待在途请求）。
     """
     emit = emit or noop_emit
+    cancel = cancel or (lambda: False)
     batch_size = cfg.llm.filter_batch_size
     total = len(papers)
     batches = [papers[i : i + batch_size] for i in range(0, total, batch_size)]
@@ -91,9 +95,18 @@ def score_papers(
     lock = threading.Lock()
     workers = max(1, min(cfg.llm.max_concurrency, len(batches)))
 
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(_score_one_batch, llm, cfg, b): b for b in batches}
+    def work(b: list[Paper]) -> int:
+        if cancel():
+            return 0
+        return _score_one_batch(llm, cfg, b)
+
+    ex = ThreadPoolExecutor(max_workers=workers)
+    futures = {ex.submit(work, b): b for b in batches}
+    try:
         for fut in as_completed(futures):
+            if cancel():
+                ex.shutdown(wait=False, cancel_futures=True)
+                break
             batch = futures[fut]
             try:
                 parsed = fut.result()
@@ -120,6 +133,8 @@ def score_papers(
                     ]
                 },
             )
+    finally:
+        ex.shutdown(wait=False)
     return papers
 
 

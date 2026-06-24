@@ -70,26 +70,30 @@ def _to_paper(result: arxiv.Result) -> Paper:
     )
 
 
+def resolve_date(cfg: ArxivConfig, ref_date: str | date_cls | None = None) -> date_cls:
+    """把参考日期解析为本地时区的 date（默认今天）。"""
+    tz = timezone(timedelta(hours=cfg.tz_offset_hours))
+    if ref_date is None:
+        return datetime.now(tz).date()
+    if isinstance(ref_date, str):
+        return date_cls.fromisoformat(ref_date)
+    return ref_date
+
+
 def resolve_window(
-    cfg: ArxivConfig, ref_date: str | date_cls | None = None
+    cfg: ArxivConfig, ref_date: str | date_cls | None = None, days: int | None = None
 ) -> tuple[datetime, datetime, str]:
     """计算抓取时间窗口 [start, end)（UTC）及其日期标签。
 
     以本地时区(tz_offset_hours)的"分界小时"(day_boundary_hour)对齐：
-    对参考日期 D，窗口结束于 D 当天的分界小时，长度为 days_back 天。
-    例如 D=6/24、分界 8 点、days_back=1 → [6/23 08:00, 6/24 08:00)（本地时间）。
+    对参考日期 D，窗口结束于 D 当天的分界小时，长度为 days 天（默认 cfg.days_back）。
+    例如 D=6/24、分界 8 点、days=1 → [6/23 08:00, 6/24 08:00)（本地时间）。
     返回 (start_utc, end_utc, date_label)，date_label 即参考日期 YYYY-MM-DD。
     """
-    tz = timezone(timedelta(hours=cfg.tz_offset_hours))
-    if ref_date is None:
-        d = datetime.now(tz).date()
-    elif isinstance(ref_date, str):
-        d = date_cls.fromisoformat(ref_date)
-    else:
-        d = ref_date
-
-    end_local = datetime.combine(d, time(hour=cfg.day_boundary_hour), tzinfo=tz)
-    start_local = end_local - timedelta(days=max(1, cfg.days_back))
+    d = resolve_date(cfg, ref_date)
+    span = max(1, days if days is not None else cfg.days_back)
+    end_local = datetime.combine(d, time(hour=cfg.day_boundary_hour), tzinfo=tz_of(cfg))
+    start_local = end_local - timedelta(days=span)
     return (
         start_local.astimezone(timezone.utc),
         end_local.astimezone(timezone.utc),
@@ -97,9 +101,14 @@ def resolve_window(
     )
 
 
+def tz_of(cfg: ArxivConfig) -> timezone:
+    return timezone(timedelta(hours=cfg.tz_offset_hours))
+
+
 def fetch_recent_papers(
     cfg: ArxivConfig,
     ref_date: str | date_cls | None = None,
+    days: int | None = None,
     notify: Callable[[str], None] | None = None,
 ) -> list[Paper]:
     """拉取参考日期对应窗口内提交的论文（窗口定义见 resolve_window）。
@@ -107,14 +116,15 @@ def fetch_recent_papers(
     遇到 arxiv 限流(HTTP 429)等错误会按指数退避自动重试整次抓取；
     notify(msg) 用于把"限流/重试"提示回传给调用方（网页/CLI）。
     """
-    start_utc, end_utc, _ = resolve_window(cfg, ref_date)
+    span = max(1, days if days is not None else cfg.days_back)
+    start_utc, end_utc, _ = resolve_window(cfg, ref_date, span)
 
     cat_query = " OR ".join(f"cat:{c}" for c in cfg.categories)
     # 用 arxiv 的 submittedDate 范围过滤（UTC），对历史日期也高效准确
     date_filter = f"submittedDate:[{start_utc:%Y%m%d%H%M} TO {end_utc:%Y%m%d%H%M}]"
     query = f"({cat_query}) AND {date_filter}"
-    # max_results 是“每天”的上限：窗口跨 days_back 天时，总上限按天数放大
-    effective_max = cfg.max_results * max(1, cfg.days_back)
+    # max_results 是“每天”的上限：窗口跨 span 天时，总上限按天数放大
+    effective_max = cfg.max_results * span
 
     client = arxiv.Client(
         page_size=cfg.page_size,
