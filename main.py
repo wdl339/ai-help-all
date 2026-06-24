@@ -39,15 +39,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="ai-help-all: 每日 arxiv 论文推送")
     parser.add_argument("-c", "--config", default="config.yaml", help="配置文件路径")
     parser.add_argument("--refresh", "--no-dedup", dest="refresh", action="store_true",
-                        help="重新生成：忽略历史去重，重新处理今天的论文（默认否）")
+                        help="重新生成：忽略历史去重，重新处理（默认否）")
     parser.add_argument("--dry-run", action="store_true", help="只爬取并打印候选，不调用 LLM、不推送")
+    parser.add_argument("--date", default="", help="参考日期 YYYY-MM-DD（默认今天，按本地时区）")
+    parser.add_argument("--days-back", type=int, default=0, help="窗口天数（覆盖配置 arxiv.days_back）")
     parser.add_argument("--list-models", action="store_true", help="列出可调用模型并退出")
     args = parser.parse_args()
     try:
         if args.list_models:
             return list_models(args.config)
         cfg = load_config(args.config)
-        run_pipeline(cfg, make_print_emitter(), dedup=not args.refresh, dry_run=args.dry_run)
+        if args.days_back and args.days_back > 0:
+            cfg.arxiv.days_back = args.days_back
+        run_pipeline(cfg, make_print_emitter(), dedup=not args.refresh,
+                     dry_run=args.dry_run, ref_date=args.date or None)
         return 0
     except (FileNotFoundError, ValueError) as e:
         print(f"配置错误: {e}", file=sys.stderr)

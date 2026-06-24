@@ -46,7 +46,8 @@ class RunManager:
             for q in self.subscribers:
                 q.put(ev)
 
-    def start(self, config_path: str, *, refresh: bool, dry_run: bool) -> bool:
+    def start(self, config_path: str, *, refresh: bool, dry_run: bool,
+              ref_date: str | None = None, days_back: int | None = None) -> bool:
         """启动一次运行；若已有运行返回 False（调用方应改为订阅 /api/stream）。"""
         with self.lock:
             if self.running:
@@ -59,7 +60,9 @@ class RunManager:
         def worker() -> None:
             try:
                 cfg = load_config(config_path)
-                run_pipeline(cfg, self._emit, dedup=not refresh, dry_run=dry_run)
+                if days_back and days_back > 0:
+                    cfg.arxiv.days_back = days_back
+                run_pipeline(cfg, self._emit, dedup=not refresh, dry_run=dry_run, ref_date=ref_date or None)
             except Exception as e:  # noqa: BLE001
                 self._emit("error", {"message": f"运行失败: {e}"})
             finally:
@@ -127,10 +130,16 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
             cfg = load_config(config_path)
         except Exception as e:  # noqa: BLE001
             return JSONResponse({"error": str(e)}, status_code=400)
+        from datetime import timedelta, timezone
+        tz = timezone(timedelta(hours=cfg.arxiv.tz_offset_hours))
+        today = datetime.now(tz).date().isoformat()
         return JSONResponse({
             "categories": cfg.arxiv.categories,
             "days_back": cfg.arxiv.days_back,
             "max_results": cfg.arxiv.max_results,
+            "day_boundary_hour": cfg.arxiv.day_boundary_hour,
+            "tz_offset_hours": cfg.arxiv.tz_offset_hours,
+            "today": today,
             "relevance_threshold": cfg.relevance_threshold,
             "max_summarize": cfg.max_summarize,
             "filter_model": cfg.llm.filter_model,
@@ -206,8 +215,12 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
         })
 
     @app.get("/api/start")
-    def start(dry_run: bool = False, refresh: bool = False) -> JSONResponse:
-        started = manager.start(config_path, refresh=refresh, dry_run=dry_run)
+    def start(dry_run: bool = False, refresh: bool = False,
+              date: str = "", days_back: int = 0) -> JSONResponse:
+        started = manager.start(
+            config_path, refresh=refresh, dry_run=dry_run,
+            ref_date=date or None, days_back=days_back or None,
+        )
         return JSONResponse({"started": started, **manager.status()})
 
     @app.get("/api/stream")

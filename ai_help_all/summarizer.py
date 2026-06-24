@@ -33,7 +33,7 @@ _SUM_SYS = """你是一个资深科研助理。请基于给定论文信息，用
 _SEC_RE = re.compile(r"\[(总结|摘要翻译|作者单位)\]")
 
 
-def _fetch_first_page_text(pdf_url: str, max_chars: int = 1800) -> str:
+def _fetch_first_page_text(pdf_url: str, max_chars: int) -> str:
     """下载 PDF 并提取首页文本（用于抽取作者单位）。失败返回空串。"""
     try:
         import fitz  # pymupdf
@@ -77,7 +77,7 @@ def summarize_paper(llm: LLMClient, cfg: Config, paper: Paper) -> None:
     """生成总结、摘要翻译、作者单位，写回 paper（就地修改）。"""
     first_page = ""
     if cfg.fetch_affiliations:
-        first_page = _fetch_first_page_text(paper.pdf_url)
+        first_page = _fetch_first_page_text(paper.pdf_url, cfg.affiliation_pdf_chars)
 
     sys = _SUM_SYS.format(lang=cfg.llm.language)
     user = (

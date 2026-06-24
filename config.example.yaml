@@ -11,10 +11,20 @@ arxiv:
     - cs.PF   # 性能
     - cs.AI   # 人工智能
     - cs.CL   # NLP / 大模型
-  # 只抓取最近 N 天提交/更新的论文（一般设 1 表示“今天”，周一可设 3 把周末补上）
+  # 窗口天数。结合“分界小时”：对参考日期 D，窗口 = [D-days_back 天的分界点, D 的分界点)。
+  # 例：D=6/24、分界8点、days_back=1 → 6/23 08:00 ~ 6/24 08:00（本地时间）。运行时可临时改。
   days_back: 1
-  # 每次最多从 arxiv 拉取多少篇候选（拉取上限，越大越全但越慢）
-  max_results: 300
+  # “一天”的分界小时（本地时区，0-23）。8 表示一天从早上 8 点到次日 8 点。
+  day_boundary_hour: 8
+  # 本地时区相对 UTC 的偏移小时（北京=8）。
+  tz_offset_hours: 8
+  # 每天最多从 arxiv 拉取多少篇候选（每天上限；多天时实际上限 = 本值 × 天数）。
+  # 一天 7 个分类约 300-400 篇，设大些以免漏。
+  max_results: 500
+  # arxiv 抓取调优（一般不用改）：每页条数 / 请求间隔(秒) / 失败重试次数
+  page_size: 100
+  request_delay_seconds: 3.0
+  fetch_retries: 3
 
 # ---- 你的研究兴趣（用自然语言描述，越具体筛得越准）----
 interests: |
@@ -25,10 +35,16 @@ interests: |
 
 # 相关性打分阈值（1-10），>= 该分数的论文才会被总结并推送
 relevance_threshold: 6
-# 最多总结/推送多少篇（按相关性从高到低）
-max_summarize: 20
+# 每天最多自动 AI 总结多少篇：选定周期内按"自然日"(分界小时对齐)分组，每天各取相关性最高的若干篇。
+# 例：days_back=2 时，是这 2 天各自的前 N 篇（不是 2 天合计 N 篇）。
+# 其余达到阈值的论文仍会保留，只是不自动总结，可在网页上按需单独「生成总结」。
+max_summarize: 15
 # 是否下载 PDF 首页提取作者单位/发表机构（arxiv API 不提供机构信息；关掉可省下载时间）
 fetch_affiliations: true
+# 提取作者单位时，PDF 首页文本截断到多少字符（首页含作者/单位即可）
+affiliation_pdf_chars: 1800
+# 展示作者时最多列几位（markdown/邮件）
+max_authors_shown: 6
 
 # ---- LLM 设置 ----
 # 可用模型(SJTU 交我算 API)调用名 / 上下文 / 说明：
@@ -55,9 +71,11 @@ llm:
   # 单次请求超时(秒)，超时即重试
   request_timeout: 180
   # 超时/失败的最大尝试次数，用尽仍失败则该篇标记失败（可在网页上单独「重新总结」）
-  max_retries: 3
+  max_retries: 2
   # 一次筛选 prompt 里塞多少篇论文（控制单请求 token；用大上下文模型可调大）
   filter_batch_size: 20
+  # 筛选时每篇摘要截断到多少字符（够覆盖绝大多数摘要；调大更全但更耗 token）
+  filter_abstract_chars: 1200
   # 单次请求最大输出 token（思考模型如 minimax 会先用 token 推理，需留足余量）
   filter_max_tokens: 2048
   # 总结要同时产出 中文总结 + 摘要翻译 + 作者单位，需更大余量

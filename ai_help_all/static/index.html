@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ai-help-all · 论文日报仪表盘</title>
+<title>Aha · 论文日报</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235b9dff'/%3E%3Cstop offset='1' stop-color='%237c5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='24' fill='url(%23g)'/%3E%3Ctext x='50' y='62' font-size='44' font-family='Arial,sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E" />
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
@@ -21,8 +22,17 @@
     display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
     position: sticky; top: 0; background: rgba(15,17,21,0.92); backdrop-filter: blur(8px); z-index: 10;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  header h1 .em { color: var(--accent); }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .logo {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 11px; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; font-weight: 800; font-size: 17px; letter-spacing: .5px;
+    box-shadow: 0 4px 14px rgba(92,108,255,0.35);
+  }
+  header h1 { font-size: 18px; margin: 0; line-height: 1.15; }
+  header h1 .em { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  header .tagline { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
   .grow { flex: 1; }
   .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   label.chk { color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
@@ -33,6 +43,8 @@
   button:disabled { background: #394150; cursor: not-allowed; }
   button.ghost { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); }
   select { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  input[type=date], input[type=number] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-size: 13px; }
+  input[type=number] { width: 50px; }
   main { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
   .cfg { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
   .cfg b { color: var(--fg); }
@@ -81,17 +93,25 @@
 </head>
 <body>
 <header>
-  <h1>ai-help-all <span class="em">论文日报</span></h1>
+  <div class="brand">
+    <span class="logo">Aha</span>
+    <div>
+      <h1><span class="em">AI helps all</span> 论文日报</h1>
+    </div>
+  </div>
   <div class="grow"></div>
   <div class="controls">
     <select id="history" title="查看历史日报"><option value="">历史日报…</option></select>
-    <label class="chk" title="忽略历史去重，重新处理今天的论文"><input type="checkbox" id="refresh" /> 重新生成</label>
+    <label class="chk" title="参考日期（默认今天）；窗口截止于该日期的分界点">日期 <input type="date" id="runDate" /></label>
+    <label class="chk" title="从选定日期往前 N 天（窗口 = 选定日期分界点 往前 N 天）">天数 <input type="number" id="runDaysBack" min="1" max="14" /></label>
+    <label class="chk" title="忽略历史去重，重新处理"><input type="checkbox" id="refresh" /> 重新生成</label>
     <label class="chk"><input type="checkbox" id="dryrun" /> 试跑</label>
     <button id="runBtn">▶ 运行</button>
   </div>
 </header>
 <main>
   <div class="cfg" id="cfg">加载配置中…</div>
+  <div class="cfg" id="winHint" style="margin-top:-8px"></div>
 
   <div class="stages" id="stages"></div>
 
@@ -118,6 +138,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let currentDate = "";   // 当前展示/运行对应的日报日期，用于单篇「重新总结」
+let boundaryHour = 8, tzOffset = 8;   // 来自配置：分界小时 / 时区偏移
 const STAGES = [
   ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
   ["summarize", "生成总结"], ["push", "推送/归档"],
@@ -167,11 +188,11 @@ function makeCard(p) {
     </div>
     <div class="reason">${escapeHtml(p.reason || "")}</div>
     <div class="meta">${escapeHtml(authors)}</div>
-    <div class="meta aff">发表机构：<span class="aff-val" style="color:var(--muted)">解析中…</span></div>
+    <div class="meta aff">发表机构：<span class="aff-val" style="color:var(--muted)">${p.will_summarize === false ? "（未生成）" : "解析中…"}</span></div>
     <div class="meta">${escapeHtml((p.categories||[]).join(", "))} ·
       <a href="${p.entry_url}" target="_blank">摘要页</a> ·
       <a href="${p.pdf_url}" target="_blank">PDF</a></div>
-    <div class="summary loading"><span class="spinner"></span>总结生成中…</div>
+    <div class="summary"></div>
     <details class="abs">
       <summary>原始摘要 / 中文翻译</summary>
       <div class="abs-zh"></div>
@@ -184,29 +205,52 @@ function makeCard(p) {
     affEl: el.querySelector(".aff-val"),
     absZhEl: el.querySelector(".abs-zh"),
   };
+  renderSummaryArea(p.short_id, p);
   return cards[p.short_id];
 }
 
-function isFailedSummary(s) {
-  return !s || s.startsWith("(总结生成失败") || s === "(无总结)" || s === "(总结生成失败)";
+function isFailedText(s) {
+  return !!s && (s.startsWith("(总结生成失败") || s === "(无总结)");
+}
+
+// 计算总结区状态：ok=已总结 / failed=失败 / pending=待总结(将自动总结) / none=保留但未总结
+function summaryState(p) {
+  const s = p.summary || "";
+  if (s && !isFailedText(s)) return "ok";
+  if (isFailedText(s)) return "failed";
+  return p.will_summarize ? "pending" : "none";
+}
+
+function renderSummaryArea(short_id, p) {
+  const c = cards[short_id];
+  if (!c) return;
+  const el = c.summaryEl;
+  const st = summaryState(p);
+  el.classList.toggle("loading", st === "pending");
+  if (st === "ok") {
+    el.innerHTML = renderSummary(p.summary);
+  } else if (st === "pending") {
+    el.innerHTML = `<span class="spinner"></span>总结生成中…`;
+  } else if (st === "failed") {
+    el.innerHTML = `<span style="color:var(--red)">总结生成失败（可能超时）</span> ` +
+      `<button class="retry">重新总结</button>`;
+    el.querySelector(".retry").onclick = () => retrySummary(short_id);
+  } else { // none：保留但未自动总结
+    el.innerHTML = `<span style="color:var(--muted)">未生成 AI 总结</span> ` +
+      `<button class="retry">生成总结</button>`;
+    el.querySelector(".retry").onclick = () => retrySummary(short_id);
+  }
 }
 
 function fillCard(short_id, data) {
   const c = cards[short_id];
   if (!c) return;
-  if (data.summary != null) {
-    c.summaryEl.classList.remove("loading");
-    if (isFailedSummary(data.summary)) {
-      c.summaryEl.innerHTML = `<span style="color:var(--red)">总结生成失败（可能超时）</span> ` +
-        `<button class="retry" data-id="${short_id}">重新总结</button>`;
-      c.summaryEl.querySelector(".retry").onclick = () => retrySummary(short_id);
-    } else {
-      c.summaryEl.innerHTML = renderSummary(data.summary);
-    }
-  }
+  if (data.summary != null) renderSummaryArea(short_id, data);
   const affs = data.affiliations || [];
-  c.affEl.textContent = affs.length ? affs.join("；") : "未识别";
-  c.affEl.style.color = affs.length ? "var(--fg)" : "var(--muted)";
+  const noAff = !affs.length;
+  // 未总结的论文不显示“解析中…”，显示“（未生成）”
+  c.affEl.textContent = affs.length ? affs.join("；") : (summaryState(data) === "none" ? "（未生成）" : "未识别");
+  c.affEl.style.color = noAff ? "var(--muted)" : "var(--fg)";
   if (data.abstract_zh) c.absZhEl.innerHTML = `<b>摘要（中文）</b>：${escapeHtml(data.abstract_zh)}<br><br>`;
 }
 
@@ -270,11 +314,14 @@ function handle(ev) {
       });
       while ($("scored").children.length > 80) $("scored").lastChild.remove();
       break;
-    case "selected":
+    case "selected": {
       $("resultsHead").classList.remove("hidden");
-      (payload.papers || []).forEach(makeCard);
-      log(`入选 ${(payload.papers||[]).length} 篇，开始总结…`);
+      const ps = payload.papers || [];
+      ps.forEach(makeCard);
+      const willSum = ps.filter(p => p.will_summarize).length;
+      log(`命中 ${ps.length} 篇（${willSum} 篇将生成 AI 总结，其余保留，可按需生成）`);
       break;
+    }
     case "summarize_progress": {
       const pct = payload.total ? (payload.done / payload.total * 100) : 0;
       $("sumBar").style.width = pct + "%";
@@ -294,11 +341,17 @@ function handle(ev) {
       if (payload.date) currentDate = payload.date;
       log(`已归档: ${payload.json || ""}${payload.markdown ? "  " + payload.markdown : ""}`);
       break;
+    case "log":
+      log(payload.message);
+      break;
     case "error":
       log(payload.message, true);
       break;
     case "done":
-      log(`完成 ✅ 共 ${payload.count} 篇`);
+      if (payload.summarized !== undefined)
+        log(`完成 ✅ 保留 ${payload.count} 篇，AI 总结 ${payload.summarized} 篇`);
+      else
+        log(`完成 ✅ 共 ${payload.count} 篇`);
       finish();
       break;
   }
@@ -366,7 +419,11 @@ async function onRunClick() {
   if (!running) {
     running = true; updateBtn();
     const dry = $("dryrun").checked, refresh = $("refresh").checked;
-    try { await fetch(`/api/start?dry_run=${dry}&refresh=${refresh}`); } catch {}
+    const date = $("runDate").value || "";
+    const daysBack = parseInt($("runDaysBack").value) || 0;
+    if (date) currentDate = date;   // 单篇「生成总结」会用这个日期定位日报
+    const qs = `dry_run=${dry}&refresh=${refresh}&date=${encodeURIComponent(date)}&days_back=${daysBack}`;
+    try { await fetch(`/api/start?${qs}`); } catch {}
   }
   attachStream();   // 无论是否已在运行，都接入进度流（回放 + 实时）
 }
@@ -375,8 +432,28 @@ async function loadConfig() {
   try {
     const c = await (await fetch("/api/config")).json();
     if (c.error) { $("cfg").innerHTML = `配置错误：${escapeHtml(c.error)}`; return; }
-    $("cfg").innerHTML = `分类 <b>${c.categories.join(" / ")}</b> · 近 <b>${c.days_back}</b> 天 · 阈值 <b>${c.relevance_threshold}</b> · 最多 <b>${c.max_summarize}</b> 篇 · 筛选 <b>${escapeHtml(c.filter_model)}</b> / 总结 <b>${escapeHtml(c.summarize_model)}</b> · 并发 <b>${c.max_concurrency}</b>`;
+    boundaryHour = c.day_boundary_hour ?? 8;
+    tzOffset = c.tz_offset_hours ?? 8;
+    // 日期/天数控件默认值
+    if (c.today && !$("runDate").value) { $("runDate").value = c.today; currentDate = c.today; }
+    if (c.days_back && !$("runDaysBack").value) $("runDaysBack").value = c.days_back;
+    const hh = String(boundaryHour).padStart(2, "0");
+    $("cfg").innerHTML = `分类 <b>${c.categories.join(" / ")}</b> · 分数阈值 <b>${c.relevance_threshold}</b> · 每天总结上限 <b>${c.max_summarize}</b> 篇 · 筛选 <b>${escapeHtml(c.filter_model)}</b> / 总结 <b>${escapeHtml(c.summarize_model)}</b> · 并发 <b>${c.max_concurrency}</b>`;
+    updateWinHint();
   } catch { $("cfg").textContent = "无法加载配置。"; }
+}
+
+// 根据所选日期/天数实时显示抓取窗口（本地时区），消除“往前/往后”的歧义
+function updateWinHint() {
+  const dateStr = $("runDate").value;
+  const db = parseInt($("runDaysBack").value) || 1;
+  if (!dateStr) { $("winHint").innerHTML = ""; return; }
+  const hh = String(boundaryHour).padStart(2, "0");
+  const end = new Date(dateStr + "T00:00:00");   // 仅用于日期算术
+  const start = new Date(end); start.setDate(start.getDate() - db);
+  const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()} ${hh}:00`;
+  $("winHint").innerHTML =
+    `抓取窗口：<b>${fmt(start)}</b> ~ <b>${fmt(end)}</b>（本地 UTC+${tzOffset}，即选定日期往前 ${db} 天）`;
 }
 
 async function loadHistory() {
@@ -419,6 +496,8 @@ async function initStatus() {
 
 $("runBtn").addEventListener("click", onRunClick);
 $("history").addEventListener("change", (e) => showHistory(e.target.value));
+$("runDate").addEventListener("change", updateWinHint);
+$("runDaysBack").addEventListener("input", updateWinHint);
 initStages();
 loadConfig();
 loadHistory();

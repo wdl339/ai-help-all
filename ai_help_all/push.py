@@ -12,7 +12,7 @@ from .arxiv_crawler import Paper
 from .config import Config
 
 
-def build_markdown(papers: list[Paper], date_str: str) -> str:
+def build_markdown(papers: list[Paper], date_str: str, max_authors: int = 6) -> str:
     lines = [
         f"# arxiv 每日论文日报 · {date_str}",
         "",
@@ -23,13 +23,13 @@ def build_markdown(papers: list[Paper], date_str: str) -> str:
         lines.append(f"## {i}. {p.title}")
         lines.append("")
         lines.append(f"- **相关性评分**：{p.score}/10　{p.reason}")
-        lines.append(f"- **作者**：{', '.join(p.authors[:6])}{' 等' if len(p.authors) > 6 else ''}")
+        lines.append(f"- **作者**：{', '.join(p.authors[:max_authors])}{' 等' if len(p.authors) > max_authors else ''}")
         if p.affiliations:
             lines.append(f"- **发表机构**：{'；'.join(p.affiliations)}")
         lines.append(f"- **分类**：{', '.join(p.categories)}")
         lines.append(f"- **链接**：[摘要页]({p.entry_url})　|　[PDF]({p.pdf_url})")
         lines.append("")
-        lines.append(p.summary or "(无总结)")
+        lines.append(p.summary or "_（未生成 AI 总结，可在仪表盘按需生成）_")
         lines.append("")
         # 原始摘要 + 中文翻译（markdown 用 <details> 折叠）
         lines.append("<details><summary>展开原始摘要 / 中文翻译</summary>")
@@ -84,7 +84,7 @@ def write_json(papers: list[Paper], out_dir: str | Path, date_str: str) -> Path:
     return path
 
 
-def _markdown_to_simple_html(papers: list[Paper], date_str: str) -> str:
+def _markdown_to_simple_html(papers: list[Paper], date_str: str, max_authors: int = 6) -> str:
     parts = [
         f"<h1>arxiv 每日论文日报 · {date_str}</h1>",
         f"<p>共筛选出 <b>{len(papers)}</b> 篇相关论文。</p>",
@@ -98,7 +98,7 @@ def _markdown_to_simple_html(papers: list[Paper], date_str: str) -> str:
         parts.append(
             f"<h2>{i}. {p.title}</h2>"
             f"<p><b>相关性</b>：{p.score}/10　{p.reason}</p>"
-            f"<p><b>作者</b>：{', '.join(p.authors[:6])}</p>"
+            f"<p><b>作者</b>：{', '.join(p.authors[:max_authors])}</p>"
             f"{aff_html}"
             f"<p><b>链接</b>：<a href='{p.entry_url}'>摘要页</a> | "
             f"<a href='{p.pdf_url}'>PDF</a></p>"
@@ -121,7 +121,7 @@ def send_email(cfg: Config, papers: list[Paper], date_str: str) -> None:
     msg["Subject"] = f"[arxiv日报] {date_str} 共 {len(papers)} 篇相关论文"
     msg["From"] = ec.from_addr or ec.username
     msg["To"] = ", ".join(ec.to_addrs)
-    html = _markdown_to_simple_html(papers, date_str)
+    html = _markdown_to_simple_html(papers, date_str, cfg.max_authors_shown)
     msg.attach(MIMEText(html, "html", "utf-8"))
 
     try:
@@ -138,9 +138,10 @@ def send_email(cfg: Config, papers: list[Paper], date_str: str) -> None:
         print(f"  [推送] 邮件发送失败: {e}")
 
 
-def push_all(cfg: Config, papers: list[Paper]) -> dict:
-    """生成日报并推送，返回产物路径信息。"""
-    date_str = datetime.now().strftime("%Y-%m-%d")
+def push_all(cfg: Config, papers: list[Paper], date_str: str | None = None) -> dict:
+    """生成日报并推送，返回产物路径信息。date_str 为日报日期标签。"""
+    if not date_str:
+        date_str = datetime.now().strftime("%Y-%m-%d")
     result: dict = {"date": date_str, "markdown": None, "json": None}
 
     # JSON 始终生成（网页读取）
@@ -148,7 +149,7 @@ def push_all(cfg: Config, papers: list[Paper]) -> dict:
     result["json"] = str(json_path)
 
     if cfg.push.markdown:
-        content = build_markdown(papers, date_str)
+        content = build_markdown(papers, date_str, cfg.max_authors_shown)
         md_path = write_markdown(content, "digests", date_str)
         result["markdown"] = str(md_path)
 

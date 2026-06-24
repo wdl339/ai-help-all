@@ -20,7 +20,16 @@ except ImportError:  # python-dotenv 是可选依赖
 class ArxivConfig:
     categories: list[str] = field(default_factory=lambda: ["cs.AI"])
     days_back: int = 1
+    # 每天的抓取上限；多天窗口时实际上限 = max_results × days_back
     max_results: int = 200
+    # “一天”的分界小时（本地时区）。例如 8 表示一天从早上 8 点算到次日 8 点。
+    day_boundary_hour: int = 8
+    # 本地时区相对 UTC 的偏移小时数（北京 = 8），用于把上面的“8点”对齐到 UTC。
+    tz_offset_hours: int = 8
+    # arxiv 抓取调优：每页条数 / 请求间隔(秒，礼貌延迟) / 失败重试次数
+    page_size: int = 100
+    request_delay_seconds: float = 3.0
+    fetch_retries: int = 3
 
 
 @dataclass
@@ -40,9 +49,11 @@ class LLMConfig:
     # 单次请求超时(秒)，超时即按下面的次数重试
     request_timeout: int = 180
     # 超时/失败的最大尝试次数，超过则放弃（该篇标记为失败，可在网页上单独重试）
-    max_retries: int = 3
+    max_retries: int = 2
     # 一次筛选 prompt 里塞多少篇论文
     filter_batch_size: int = 20
+    # 筛选时每篇摘要截断到多少字符（控制单次请求 token；够覆盖绝大多数摘要）
+    filter_abstract_chars: int = 1200
     # 单次请求的最大输出 token（思考模型会先消耗 token 做推理，需留足余量）
     filter_max_tokens: int = 2048
     # 总结要同时产出 中文总结 + 摘要翻译 + 作者单位，需更大余量
@@ -73,9 +84,14 @@ class Config:
     arxiv: ArxivConfig = field(default_factory=ArxivConfig)
     interests: str = ""
     relevance_threshold: int = 6
-    max_summarize: int = 20
+    # 每天（按分界小时对齐的自然日）最多自动 AI 总结多少篇
+    max_summarize: int = 15
     # 是否下载 PDF 首页提取作者单位/发表机构（关掉可省下载时间）
     fetch_affiliations: bool = True
+    # 提取作者单位时，PDF 首页文本截断到多少字符（首页含作者/单位即可）
+    affiliation_pdf_chars: int = 1800
+    # 总结/筛选/推送展示作者时最多列几位
+    max_authors_shown: int = 6
     llm: LLMConfig = field(default_factory=LLMConfig)
     push: PushConfig = field(default_factory=PushConfig)
 
@@ -113,6 +129,8 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         relevance_threshold=int(raw.get("relevance_threshold", 6)),
         max_summarize=int(raw.get("max_summarize", 20)),
         fetch_affiliations=bool(raw.get("fetch_affiliations", True)),
+        affiliation_pdf_chars=int(raw.get("affiliation_pdf_chars", 1800)),
+        max_authors_shown=int(raw.get("max_authors_shown", 6)),
         llm=llm,
         push=push,
     )

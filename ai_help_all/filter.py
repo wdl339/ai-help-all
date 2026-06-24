@@ -17,10 +17,10 @@ _FILTER_SYS = """你是一个科研论文筛选助手。用户会给出他的研
 不要输出 JSON 以外的任何内容。"""
 
 
-def _build_user_prompt(interests: str, batch: list[Paper]) -> str:
+def _build_user_prompt(interests: str, batch: list[Paper], abstract_chars: int) -> str:
     lines = [f"# 我的研究兴趣\n{interests}\n", "# 待评估论文"]
     for i, p in enumerate(batch):
-        abstract = p.abstract[:1200]
+        abstract = p.abstract[:abstract_chars]
         lines.append(
             f"\n[{i}] 标题: {p.title}\n分类: {', '.join(p.categories)}\n摘要: {abstract}"
         )
@@ -48,7 +48,7 @@ def _parse_scores(text: str) -> list[dict]:
 
 def _score_one_batch(llm: LLMClient, cfg: Config, batch: list[Paper]) -> int:
     """对单个批次打分，写回 score/reason（就地修改），返回成功解析的条数。"""
-    prompt = _build_user_prompt(cfg.interests, batch)
+    prompt = _build_user_prompt(cfg.interests, batch, cfg.llm.filter_abstract_chars)
     out = llm.chat(
         cfg.llm.filter_model,
         [
@@ -124,7 +124,7 @@ def score_papers(
 
 
 def select_relevant(cfg: Config, papers: list[Paper]) -> list[Paper]:
-    """按阈值过滤并按分数降序，截断到 max_summarize 篇。"""
+    """返回所有达到阈值的论文，按分数降序（不截断；是否总结由调用方决定）。"""
     kept = [p for p in papers if p.score >= cfg.relevance_threshold]
     kept.sort(key=lambda p: p.score, reverse=True)
-    return kept[: cfg.max_summarize]
+    return kept
