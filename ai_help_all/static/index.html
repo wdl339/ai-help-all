@@ -67,6 +67,12 @@
   .card a:hover { text-decoration: underline; }
   .summary { background: var(--panel2); border-radius: 8px; padding: 12px 14px; font-size: 13.5px; }
   .summary.loading { color: var(--muted); font-style: italic; }
+  button.retry { background: var(--accent2); color: #fff; border: none; padding: 4px 12px; border-radius: 6px; font-size: 12.5px; cursor: pointer; margin-left: 6px; }
+  button.retry:hover { opacity: .9; }
+  details.abs { margin-top: 10px; }
+  details.abs > summary { cursor: pointer; color: var(--accent); font-size: 13px; user-select: none; }
+  details.abs .abs-en, details.abs .abs-zh { color: var(--muted); font-size: 13px; margin-top: 8px; line-height: 1.7; }
+  details.abs .abs-en { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { color: var(--muted); text-align: center; padding: 30px; }
@@ -79,8 +85,8 @@
   <div class="grow"></div>
   <div class="controls">
     <select id="history" title="查看历史日报"><option value="">历史日报…</option></select>
-    <label class="chk"><input type="checkbox" id="dedup" checked /> 去重</label>
-    <label class="chk"><input type="checkbox" id="dryrun" /> 试跑(不调LLM)</label>
+    <label class="chk" title="忽略历史去重，重新处理今天的论文"><input type="checkbox" id="refresh" /> 重新生成</label>
+    <label class="chk"><input type="checkbox" id="dryrun" /> 试跑</label>
     <button id="runBtn">▶ 运行</button>
   </div>
 </header>
@@ -111,6 +117,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+let currentDate = "";   // 当前展示/运行对应的日报日期，用于单篇「重新总结」
 const STAGES = [
   ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
   ["summarize", "生成总结"], ["push", "推送/归档"],
@@ -160,12 +167,68 @@ function makeCard(p) {
     </div>
     <div class="reason">${escapeHtml(p.reason || "")}</div>
     <div class="meta">${escapeHtml(authors)}</div>
+    <div class="meta aff">发表机构：<span class="aff-val" style="color:var(--muted)">解析中…</span></div>
     <div class="meta">${escapeHtml((p.categories||[]).join(", "))} ·
       <a href="${p.entry_url}" target="_blank">摘要页</a> ·
       <a href="${p.pdf_url}" target="_blank">PDF</a></div>
-    <div class="summary loading"><span class="spinner"></span>总结生成中…</div>`;
+    <div class="summary loading"><span class="spinner"></span>总结生成中…</div>
+    <details class="abs">
+      <summary>原始摘要 / 中文翻译</summary>
+      <div class="abs-zh"></div>
+      <div class="abs-en"><b>Abstract (EN)</b>: ${escapeHtml(p.abstract || "")}</div>
+    </details>`;
   $("results").appendChild(el);
-  cards[p.short_id] = { el, summaryEl: el.querySelector(".summary") };
+  cards[p.short_id] = {
+    el,
+    summaryEl: el.querySelector(".summary"),
+    affEl: el.querySelector(".aff-val"),
+    absZhEl: el.querySelector(".abs-zh"),
+  };
+  return cards[p.short_id];
+}
+
+function isFailedSummary(s) {
+  return !s || s.startsWith("(总结生成失败") || s === "(无总结)" || s === "(总结生成失败)";
+}
+
+function fillCard(short_id, data) {
+  const c = cards[short_id];
+  if (!c) return;
+  if (data.summary != null) {
+    c.summaryEl.classList.remove("loading");
+    if (isFailedSummary(data.summary)) {
+      c.summaryEl.innerHTML = `<span style="color:var(--red)">总结生成失败（可能超时）</span> ` +
+        `<button class="retry" data-id="${short_id}">重新总结</button>`;
+      c.summaryEl.querySelector(".retry").onclick = () => retrySummary(short_id);
+    } else {
+      c.summaryEl.innerHTML = renderSummary(data.summary);
+    }
+  }
+  const affs = data.affiliations || [];
+  c.affEl.textContent = affs.length ? affs.join("；") : "未识别";
+  c.affEl.style.color = affs.length ? "var(--fg)" : "var(--muted)";
+  if (data.abstract_zh) c.absZhEl.innerHTML = `<b>摘要（中文）</b>：${escapeHtml(data.abstract_zh)}<br><br>`;
+}
+
+async function retrySummary(short_id) {
+  const c = cards[short_id];
+  if (!c) return;
+  c.summaryEl.classList.add("loading");
+  c.summaryEl.innerHTML = `<span class="spinner"></span>重新总结中…`;
+  try {
+    const r = await (await fetch(`/api/resummarize?short_id=${encodeURIComponent(short_id)}&date=${encodeURIComponent(currentDate || "")}`)).json();
+    if (r.error) {
+      c.summaryEl.classList.remove("loading");
+      c.summaryEl.innerHTML = `<span style="color:var(--red)">${escapeHtml(r.error)}</span> ` +
+        `<button class="retry" data-id="${short_id}">重试</button>`;
+      c.summaryEl.querySelector(".retry").onclick = () => retrySummary(short_id);
+      return;
+    }
+    fillCard(short_id, r);
+  } catch (e) {
+    c.summaryEl.classList.remove("loading");
+    c.summaryEl.innerHTML = `<span style="color:var(--red)">请求失败，请稍后重试</span>`;
+  }
 }
 
 function resetUI() {
@@ -218,11 +281,9 @@ function handle(ev) {
       $("sumProg").textContent = `${payload.done}/${payload.total}`;
       break;
     }
-    case "paper_summarized": {
-      const c = cards[payload.short_id];
-      if (c) { c.summaryEl.classList.remove("loading"); c.summaryEl.innerHTML = renderSummary(payload.summary); }
+    case "paper_summarized":
+      fillCard(payload.short_id, payload);
       break;
-    }
     case "dry_run_candidates":
       $("resultsHead").classList.remove("hidden");
       $("results").innerHTML = (payload.papers||[]).map(p =>
@@ -230,6 +291,7 @@ function handle(ev) {
          <h3 class="title">${escapeHtml(p.title)}</h3></div>`).join("");
       break;
     case "pushed":
+      if (payload.date) currentDate = payload.date;
       log(`已归档: ${payload.json || ""}${payload.markdown ? "  " + payload.markdown : ""}`);
       break;
     case "error":
@@ -242,24 +304,71 @@ function handle(ev) {
   }
 }
 
-let es = null;
+let es = null;          // 当前 EventSource
+let running = false;    // 后台是否有运行
+let attached = false;   // 本页是否正接着进度流
+let lastSeq = -1;       // 已处理事件的最大 seq（去重，兼容自动重连重复回放）
+let poll = null;        // 脱离进度时轮询运行状态
+
+function updateBtn() {
+  $("runBtn").disabled = false;
+  if (!running) $("runBtn").textContent = "▶ 运行";
+  else $("runBtn").textContent = attached ? "● 运行中" : "● 查看进度";
+}
+
+function maybePoll() {
+  clearInterval(poll); poll = null;
+  // 在“看历史/未接进度”但后台仍在运行时，轮询状态以便结束后复位按钮
+  if (running && !attached) {
+    poll = setInterval(async () => {
+      try {
+        const s = await (await fetch("/api/status")).json();
+        if (!s.running) { running = false; updateBtn(); clearInterval(poll); poll = null; }
+      } catch {}
+    }, 4000);
+  }
+}
+
 function finish() {
   if (es) { es.close(); es = null; }
-  $("runBtn").disabled = false;
-  $("runBtn").textContent = "▶ 运行";
+  running = false; attached = false;
+  updateBtn(); maybePoll();
 }
-function startRun() {
+
+// 仅断开本页的进度流（不影响后台运行），用于切去看历史
+function detachStream() {
+  if (es) { es.close(); es = null; }
+  attached = false;
+  updateBtn(); maybePoll();
+}
+
+// 接入（或重新接入）正在进行的运行：重置界面并回放 + 续看实时
+function attachStream() {
+  if (es) { es.close(); es = null; }
   resetUI();
-  $("runBtn").disabled = true;
-  $("runBtn").textContent = "运行中…";
-  const dry = $("dryrun").checked, dedup = $("dedup").checked;
-  es = new EventSource(`/api/run?dry_run=${dry}&dedup=${dedup}`);
+  lastSeq = -1; attached = true;
+  updateBtn(); maybePoll();
+  es = new EventSource("/api/stream");
   es.onmessage = (e) => {
     let data; try { data = JSON.parse(e.data); } catch { return; }
+    if (data.seq !== undefined && data.seq >= 0) {
+      if (data.seq <= lastSeq) return;   // 去重：跳过已处理（含重连重复回放）
+      lastSeq = data.seq;
+    }
     if (data.type === "_end") { finish(); return; }
     handle(data);
   };
-  es.onerror = () => { log("连接中断。", true); finish(); };
+  // 出错时让 EventSource 自动重连；seq 去重保证不重复渲染，不在此 finish
+  es.onerror = () => {};
+}
+
+async function onRunClick() {
+  if (!running) {
+    running = true; updateBtn();
+    const dry = $("dryrun").checked, refresh = $("refresh").checked;
+    try { await fetch(`/api/start?dry_run=${dry}&refresh=${refresh}`); } catch {}
+  }
+  attachStream();   // 无论是否已在运行，都接入进度流（回放 + 实时）
 }
 
 async function loadConfig() {
@@ -284,6 +393,8 @@ async function loadHistory() {
 
 async function showHistory(date) {
   if (!date) return;
+  currentDate = date;
+  detachStream();   // 切去看历史时只断开本页进度流，后台运行继续
   resetUI();
   STAGES.forEach(([k]) => setStage(k, "done"));
   const d = await (await fetch("/api/digest/" + date)).json();
@@ -291,17 +402,27 @@ async function showHistory(date) {
   $("resultsHead").classList.remove("hidden");
   (d.papers || []).forEach(p => {
     makeCard(p);
-    const c = cards[p.short_id];
-    if (c && p.summary) { c.summaryEl.classList.remove("loading"); c.summaryEl.innerHTML = renderSummary(p.summary); }
+    fillCard(p.short_id, p);
   });
   log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
+  if (running) log("提示：后台仍在运行，点右上角「查看进度」可返回实时进度。");
 }
 
-$("runBtn").addEventListener("click", startRun);
+// 页面加载时若后台正在运行，自动接回进度
+async function initStatus() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    if (s.running) { running = true; attachStream(); }
+  } catch {}
+  updateBtn();
+}
+
+$("runBtn").addEventListener("click", onRunClick);
 $("history").addEventListener("change", (e) => showHistory(e.target.value));
 initStages();
 loadConfig();
 loadHistory();
+initStatus();
 </script>
 </body>
 </html>

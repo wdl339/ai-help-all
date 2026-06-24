@@ -9,6 +9,9 @@
 爬取 arxiv  →  历史去重  →  LLM 并发相关性打分(1-10)  →  阈值筛选  →  并发逐篇总结  →  推送
 ```
 
+每篇入选论文会产出：中文结构化总结、**作者单位/发表机构**（从 PDF 首页提取）、
+**英文原始摘要 + 中文翻译**（网页/邮件里可折叠）。
+
 ## 目录结构
 
 ```
@@ -36,11 +39,17 @@ ai-help-all/
 ## 本地实时仪表盘（在 IDE 里看全过程）
 
 ```bash
-python serve.py            # 默认 http://127.0.0.1:8000
+python serve.py            # 默认监听 127.0.0.1:8000
 ```
 
-启动后，在 Cursor / VSCode 命令面板运行 **“Simple Browser: Show”**，粘贴上面的地址，即可在编辑器内打开。
-点「运行」后可实时看到：5 个阶段进度、打分进度条与实时打分流、入选论文卡片（总结生成中…会逐篇填充），还能用右上角下拉查看历史日报。
+打开方式（任选其一）：
+- **远程开发环境**（本项目常用）：打开 IDE 顶部的 **「端口 / Ports」** 面板，转发本服务端口
+  （多数 IDE 会自动检测；若没有就「添加端口」填 `8000`），点该端口地址在浏览器打开。
+- **本地**：直接浏览器访问 `http://127.0.0.1:8000`，或用编辑器命令面板的 “Simple Browser: Show”。
+
+点「运行」后可实时看到：5 个阶段进度、打分进度条与实时打分流、入选论文卡片（总结/作者单位逐篇填充，
+摘要原文+中文翻译可折叠）。右上角可勾选 **“重新生成”**（忽略历史去重重跑今天，默认不勾）、查看历史日报。
+刷新页面、切去看历史再切回来，都能重新接回正在进行的进度。
 
 ## 安全说明（重要）
 
@@ -68,8 +77,11 @@ python main.py --list-models
 # 4. 先试跑：只爬取并打印候选论文，不调用 LLM、不推送（不耗 token）
 python main.py --dry-run
 
-# 5. 正式跑：生成 digests/digest-YYYY-MM-DD.md（并按配置发邮件）
+# 5. 正式跑：生成 digests/digest-YYYY-MM-DD.{md,json}（并按配置发邮件）
 python main.py
+
+# 6. 重新生成：忽略历史去重，重跑今天（默认不会重复处理已处理过的论文）
+python main.py --refresh
 ```
 
 > 若 `--list-models` 报连接/认证错误，多半是网络不可达或 api-key 问题。
@@ -81,6 +93,8 @@ python main.py
 - `interests`：用自然语言写清你的研究方向，**越具体筛得越准**。
 - `relevance_threshold`：相关性阈值（1-10），达标才会被总结推送。
 - `max_summarize`：每天最多总结几篇。
+- `fetch_affiliations`：是否下载 PDF 首页提取作者单位（arxiv API 不提供机构信息，
+  且 OpenAlex 等对当天新论文有索引延迟，故从 PDF 首页由 LLM 抽取）。关掉可省下载时间。
 - `llm.filter_model / summarize_model`：可选模型见下表。
 - `llm.requests_per_minute / tokens_per_minute`：限速（额度每分钟 10 次 / 10 万 token，默认留余量）。
 - `push.email`：可选邮件推送，默认关闭。

@@ -37,11 +37,16 @@ class LLMConfig:
     tokens_per_minute: int = 90000
     # 并发线程数（同时在途的请求数；受上面的限速器约束，调大可隐藏网络延迟）
     max_concurrency: int = 8
+    # 单次请求超时(秒)，超时即按下面的次数重试
+    request_timeout: int = 180
+    # 超时/失败的最大尝试次数，超过则放弃（该篇标记为失败，可在网页上单独重试）
+    max_retries: int = 3
     # 一次筛选 prompt 里塞多少篇论文
     filter_batch_size: int = 20
     # 单次请求的最大输出 token（思考模型会先消耗 token 做推理，需留足余量）
     filter_max_tokens: int = 2048
-    summarize_max_tokens: int = 2048
+    # 总结要同时产出 中文总结 + 摘要翻译 + 作者单位，需更大余量
+    summarize_max_tokens: int = 3072
     language: str = "中文"
 
 
@@ -68,7 +73,9 @@ class Config:
     arxiv: ArxivConfig = field(default_factory=ArxivConfig)
     interests: str = ""
     relevance_threshold: int = 6
-    max_summarize: int = 15
+    max_summarize: int = 20
+    # 是否下载 PDF 首页提取作者单位/发表机构（关掉可省下载时间）
+    fetch_affiliations: bool = True
     llm: LLMConfig = field(default_factory=LLMConfig)
     push: PushConfig = field(default_factory=PushConfig)
 
@@ -104,7 +111,8 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         arxiv=arxiv,
         interests=raw.get("interests", "").strip(),
         relevance_threshold=int(raw.get("relevance_threshold", 6)),
-        max_summarize=int(raw.get("max_summarize", 15)),
+        max_summarize=int(raw.get("max_summarize", 20)),
+        fetch_affiliations=bool(raw.get("fetch_affiliations", True)),
         llm=llm,
         push=push,
     )

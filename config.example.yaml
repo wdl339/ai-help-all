@@ -26,7 +26,9 @@ interests: |
 # 相关性打分阈值（1-10），>= 该分数的论文才会被总结并推送
 relevance_threshold: 6
 # 最多总结/推送多少篇（按相关性从高到低）
-max_summarize: 15
+max_summarize: 20
+# 是否下载 PDF 首页提取作者单位/发表机构（arxiv API 不提供机构信息；关掉可省下载时间）
+fetch_affiliations: true
 
 # ---- LLM 设置 ----
 # 可用模型(SJTU 交我算 API)调用名 / 上下文 / 说明：
@@ -50,11 +52,16 @@ llm:
   tokens_per_minute: 90000
   # 并发线程数（同时在途请求数，受限速器约束；调大可隐藏网络延迟、加速）
   max_concurrency: 8
+  # 单次请求超时(秒)，超时即重试
+  request_timeout: 180
+  # 超时/失败的最大尝试次数，用尽仍失败则该篇标记失败（可在网页上单独「重新总结」）
+  max_retries: 3
   # 一次筛选 prompt 里塞多少篇论文（控制单请求 token；用大上下文模型可调大）
   filter_batch_size: 20
   # 单次请求最大输出 token（思考模型如 minimax 会先用 token 推理，需留足余量）
   filter_max_tokens: 2048
-  summarize_max_tokens: 2048
+  # 总结要同时产出 中文总结 + 摘要翻译 + 作者单位，需更大余量
+  summarize_max_tokens: 3072
   # 总结输出语言
   language: 中文
 

@@ -24,6 +24,8 @@ class Paper:
     score: int = 0
     reason: str = ""
     summary: str = ""
+    abstract_zh: str = ""  # 摘要中文翻译
+    affiliations: list[str] = field(default_factory=list)  # 作者单位/发表机构
 
     @property
     def short_id(self) -> str:
@@ -46,6 +48,8 @@ class Paper:
             "score": self.score,
             "reason": self.reason,
             "summary": self.summary,
+            "abstract_zh": self.abstract_zh,
+            "affiliations": self.affiliations,
         }
 
 

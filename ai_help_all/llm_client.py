@@ -12,7 +12,7 @@ import threading
 import time
 from collections import deque
 
-from openai import OpenAI
+from openai import APITimeoutError, OpenAI
 
 from .config import LLMConfig
 
@@ -79,7 +79,13 @@ class RateLimiter:
 class LLMClient:
     def __init__(self, cfg: LLMConfig):
         self.cfg = cfg
-        self.client = OpenAI(base_url=cfg.base_url, api_key=cfg.api_key)
+        # max_retries=0：关闭 SDK 自带重试，完全由本类的循环控制超时/重试
+        self.client = OpenAI(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            timeout=cfg.request_timeout,
+            max_retries=0,
+        )
         self.limiter = RateLimiter(cfg.requests_per_minute, cfg.tokens_per_minute)
 
     @staticmethod
@@ -93,33 +99,43 @@ class LLMClient:
         *,
         temperature: float = 0.3,
         max_tokens: int = 1024,
-        max_retries: int = 3,
+        max_retries: int | None = None,
         **kwargs,
     ) -> str:
-        """带双限速与重试的 chat completion，返回文本内容。"""
-        # 估算本次请求 token（输入文本 + 预期输出），用于 token 限速
+        """带双限速、超时与重试的 chat completion，返回文本内容。
+
+        每次请求超时由 client 的 request_timeout 控制；超时或失败会重试，
+        总尝试次数为 max_retries（默认取配置 cfg.max_retries），用尽仍失败则抛 RuntimeError。
+        """
+        retries = max_retries if max_retries is not None else self.cfg.max_retries
+        retries = max(1, retries)
+
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
         est = estimate_tokens(" " * prompt_chars) + max_tokens
 
         params: dict = {"model": model, "messages": messages, "max_tokens": max_tokens}
-        # 深度思考模型不接受采样参数，传了可能报错
         if not self._is_reasoner(model):
             params["temperature"] = temperature
         params.update(kwargs)
 
         last_err: Exception | None = None
-        for attempt in range(max_retries):
+        for attempt in range(retries):
             self.limiter.acquire(est)
             try:
                 resp = self.client.chat.completions.create(**params)
                 content = resp.choices[0].message.content or ""
                 return content.strip()
-            except Exception as e:  # noqa: BLE001 - 统一重试
+            except APITimeoutError as e:
+                last_err = e
+                wait = min(2 ** attempt * 3, 20)
+                print(f"  [LLM] 第 {attempt + 1}/{retries} 次超时(>{self.cfg.request_timeout}s)；{wait}s 后重试")
+                time.sleep(wait)
+            except Exception as e:  # noqa: BLE001 - 其他错误也重试
                 last_err = e
                 wait = min(2 ** attempt * 5, 30)
-                print(f"  [LLM] 第 {attempt + 1}/{max_retries} 次调用失败: {e}；{wait}s 后重试")
+                print(f"  [LLM] 第 {attempt + 1}/{retries} 次调用失败: {e}；{wait}s 后重试")
                 time.sleep(wait)
-        raise RuntimeError(f"LLM 调用多次失败: {last_err}")
+        raise RuntimeError(f"LLM 调用多次失败(已尝试 {retries} 次): {last_err}")
 
     def list_models(self) -> list[str]:
         """列出当前 api-key 可调用的模型 id（也可用于连通性/密钥校验）。"""

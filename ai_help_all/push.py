@@ -24,10 +24,22 @@ def build_markdown(papers: list[Paper], date_str: str) -> str:
         lines.append("")
         lines.append(f"- **相关性评分**：{p.score}/10　{p.reason}")
         lines.append(f"- **作者**：{', '.join(p.authors[:6])}{' 等' if len(p.authors) > 6 else ''}")
+        if p.affiliations:
+            lines.append(f"- **发表机构**：{'；'.join(p.affiliations)}")
         lines.append(f"- **分类**：{', '.join(p.categories)}")
         lines.append(f"- **链接**：[摘要页]({p.entry_url})　|　[PDF]({p.pdf_url})")
         lines.append("")
         lines.append(p.summary or "(无总结)")
+        lines.append("")
+        # 原始摘要 + 中文翻译（markdown 用 <details> 折叠）
+        lines.append("<details><summary>展开原始摘要 / 中文翻译</summary>")
+        lines.append("")
+        if p.abstract_zh:
+            lines.append(f"**摘要（中文）**：{p.abstract_zh}")
+            lines.append("")
+        lines.append(f"**Abstract (EN)**: {p.abstract}")
+        lines.append("")
+        lines.append("</details>")
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -79,13 +91,20 @@ def _markdown_to_simple_html(papers: list[Paper], date_str: str) -> str:
     ]
     for i, p in enumerate(papers, 1):
         summary_html = (p.summary or "").replace("\n", "<br>")
+        aff_html = (
+            f"<p><b>发表机构</b>：{'；'.join(p.affiliations)}</p>" if p.affiliations else ""
+        )
+        abs_zh = f"<p><b>摘要(中文)</b>：{p.abstract_zh}</p>" if p.abstract_zh else ""
         parts.append(
             f"<h2>{i}. {p.title}</h2>"
             f"<p><b>相关性</b>：{p.score}/10　{p.reason}</p>"
             f"<p><b>作者</b>：{', '.join(p.authors[:6])}</p>"
+            f"{aff_html}"
             f"<p><b>链接</b>：<a href='{p.entry_url}'>摘要页</a> | "
             f"<a href='{p.pdf_url}'>PDF</a></p>"
-            f"<p>{summary_html}</p><hr>"
+            f"<p>{summary_html}</p>"
+            f"<details><summary>原始摘要 / 中文翻译</summary>{abs_zh}"
+            f"<p><b>Abstract</b>: {p.abstract}</p></details><hr>"
         )
     return "<html><body>" + "".join(parts) + "</body></html>"
 

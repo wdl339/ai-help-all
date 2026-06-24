@@ -1,10 +1,10 @@
 """ai-help-all 入口：爬取 arxiv -> 去重 -> 并发 LLM 筛选 -> 总结 -> 推送。
 
 用法：
-    python main.py                  # 用 config.yaml 跑完整流程
+    python main.py                  # 用 config.yaml 跑完整流程（默认跳过已处理过的论文）
     python main.py -c my.yaml       # 指定配置文件
     python main.py --dry-run        # 只爬取并打印候选论文，不调用 LLM、不推送（不耗 token）
-    python main.py --no-dedup       # 不跳过历史已推送过的论文
+    python main.py --refresh        # 重新生成：忽略历史去重，重新处理今天的论文（默认否）
     python main.py --list-models    # 列出可调用模型(校验 api-key / 连通性)
 
 启动本地实时仪表盘网页见 serve.py：python serve.py
@@ -38,7 +38,8 @@ def list_models(config_path: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="ai-help-all: 每日 arxiv 论文推送")
     parser.add_argument("-c", "--config", default="config.yaml", help="配置文件路径")
-    parser.add_argument("--no-dedup", action="store_true", help="不跳过历史已推送过的论文")
+    parser.add_argument("--refresh", "--no-dedup", dest="refresh", action="store_true",
+                        help="重新生成：忽略历史去重，重新处理今天的论文（默认否）")
     parser.add_argument("--dry-run", action="store_true", help="只爬取并打印候选，不调用 LLM、不推送")
     parser.add_argument("--list-models", action="store_true", help="列出可调用模型并退出")
     args = parser.parse_args()
@@ -46,7 +47,7 @@ def main() -> int:
         if args.list_models:
             return list_models(args.config)
         cfg = load_config(args.config)
-        run_pipeline(cfg, make_print_emitter(), dedup=not args.no_dedup, dry_run=args.dry_run)
+        run_pipeline(cfg, make_print_emitter(), dedup=not args.refresh, dry_run=args.dry_run)
         return 0
     except (FileNotFoundError, ValueError) as e:
         print(f"配置错误: {e}", file=sys.stderr)
