@@ -1,0 +1,65 @@
+# ============ ai-help-all 配置文件 ============
+# 复制本文件为 config.yaml 后按需修改。
+
+# ---- arxiv 爬取设置 ----
+arxiv:
+  # 关注的 arxiv 主分类，见 https://arxiv.org/category_taxonomy
+  categories:
+    - cs.AI
+    - cs.CL
+    - cs.LG
+  # 只抓取最近 N 天提交/更新的论文（一般设 1 表示“今天”，周一可设 3 把周末补上）
+  days_back: 1
+  # 每次最多从 arxiv 拉取多少篇候选（拉取上限，越大越全但越慢）
+  max_results: 200
+
+# ---- 你的研究兴趣（用自然语言描述，越具体筛得越准）----
+interests: |
+  我关注大语言模型的强化学习训练（RLHF / RLVR / GRPO）、
+  Agent 与工具调用、多模态大模型、以及高效推理/训练（量化、长上下文）。
+  我不太关心纯理论证明、硬件电路、纯 CV 检测分割类工作。
+
+# 相关性打分阈值（1-10），>= 该分数的论文才会被总结并推送
+relevance_threshold: 6
+# 最多总结/推送多少篇（按相关性从高到低）
+max_summarize: 15
+
+# ---- LLM 设置 ----
+# 可用模型(SJTU 交我算 API)调用名：
+#   deepseek-chat      DeepSeek V3.2 常规模式
+#   deepseek-reasoner  DeepSeek V3.2 思考模式
+#   minimax-m2.7       MiniMax-M2.7
+#   glm-5.1            GLM-5.1
+#   qwen3.5-27b        Qwen3.5-27B
+# 注意：需在校内网络环境下使用该 API。
+llm:
+  base_url: https://models.sjtu.edu.cn/api/v1
+  # 推荐用环境变量 AI_HELP_ALL_API_KEY，留空则读环境变量（不要把真实 key 写进会上传 git 的文件！）
+  api_key: ""
+  # 筛选用模型（便宜快即可）
+  filter_model: qwen3.5-27b
+  # 总结用模型（质量好一点）
+  summarize_model: deepseek-chat
+  # 速率限制（按申请的额度：每分钟 10 次请求）
+  requests_per_minute: 9
+  # 一次筛选 prompt 里塞多少篇论文（控制单请求 token）
+  filter_batch_size: 20
+  # 总结输出语言
+  language: 中文
+
+# ---- 推送设置 ----
+push:
+  # 始终会在 ./digests/ 下生成 markdown 日报
+  markdown: true
+  # 邮件推送（可选）。不需要就保持 enabled: false
+  email:
+    enabled: false
+    smtp_host: smtp.example.com
+    smtp_port: 465
+    use_ssl: true
+    username: you@example.com
+    # 推荐用环境变量 AI_HELP_ALL_SMTP_PASSWORD
+    password: ""
+    from_addr: you@example.com
+    to_addrs:
+      - you@example.com
