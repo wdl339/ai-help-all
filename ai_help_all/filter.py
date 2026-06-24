@@ -59,6 +59,7 @@ def score_papers(llm: LLMClient, cfg: Config, papers: list[Paper]) -> list[Paper
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.0,
+                max_tokens=cfg.llm.filter_max_tokens,
             )
         except RuntimeError as e:
             print(f"  [筛选] 该批次失败，跳过: {e}")

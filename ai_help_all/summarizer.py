@@ -28,6 +28,7 @@ def summarize_paper(llm: LLMClient, cfg: Config, paper: Paper) -> str:
             {"role": "user", "content": user},
         ],
         temperature=0.3,
+        max_tokens=cfg.llm.summarize_max_tokens,
     )
 
 

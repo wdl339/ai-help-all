@@ -27,10 +27,19 @@ class ArxivConfig:
 class LLMConfig:
     base_url: str = "https://models.sjtu.edu.cn/api/v1"
     api_key: str = ""
-    filter_model: str = "deepseek-chat"
-    summarize_model: str = "deepseek-chat"
+    # 筛选用大上下文模型（minimax-m2.7 上下文 192k，适合批量塞摘要）
+    filter_model: str = "minimax-m2.7"
+    # 总结用最强模型（glm-5.1 上下文 128k，质量好）
+    summarize_model: str = "glm-5.1"
+    # 速率限制（申请额度：每分钟 10 次请求，留 1 余量）
     requests_per_minute: int = 9
+    # token 限速（申请额度：每分钟 100000 token，默认留约 10% 余量）
+    tokens_per_minute: int = 90000
+    # 一次筛选 prompt 里塞多少篇论文
     filter_batch_size: int = 20
+    # 单次请求的最大输出 token
+    filter_max_tokens: int = 2048
+    summarize_max_tokens: int = 1024
     language: str = "中文"
 
 

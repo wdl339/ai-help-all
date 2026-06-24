@@ -25,25 +25,30 @@ relevance_threshold: 6
 max_summarize: 15
 
 # ---- LLM 设置 ----
-# 可用模型(SJTU 交我算 API)调用名：
-#   deepseek-chat      DeepSeek V3.2 常规模式
-#   deepseek-reasoner  DeepSeek V3.2 思考模式
-#   minimax-m2.7       MiniMax-M2.7
-#   glm-5.1            GLM-5.1
-#   qwen3.5-27b        Qwen3.5-27B
-# 注意：需在校内网络环境下使用该 API。
+# 可用模型(SJTU 交我算 API)调用名 / 上下文长度 / 侧重：
+#   glm-5.1            GLM-5.1                 128k   代码与长程任务(最强，默认总结模型)
+#   minimax-m2.7       MiniMax-M2.7            192k   智能体任务/长上下文(默认筛选模型)
+#   deepseek-chat      DeepSeek V3.2 常规模式   32k   通用文本
+#   deepseek-reasoner  DeepSeek V3.2 思考模式   32k   复杂推理(不接受 temperature)
+#   qwen3.5-27b        Qwen3.5-27B            256k   多模态/长上下文
+# 用 `python main.py --list-models` 可校验密钥并查看实际可用模型 id。
 llm:
   base_url: https://models.sjtu.edu.cn/api/v1
   # 推荐用环境变量 AI_HELP_ALL_API_KEY，留空则读环境变量（不要把真实 key 写进会上传 git 的文件！）
   api_key: ""
-  # 筛选用模型（便宜快即可）
-  filter_model: qwen3.5-27b
-  # 总结用模型（质量好一点）
-  summarize_model: deepseek-chat
-  # 速率限制（按申请的额度：每分钟 10 次请求）
+  # 筛选用模型：批量塞摘要，选上下文大的（minimax-m2.7=192k）
+  filter_model: minimax-m2.7
+  # 总结用模型：选最强的（glm-5.1）
+  summarize_model: glm-5.1
+  # 请求数限速（申请额度：每分钟 10 次，留 1 余量）
   requests_per_minute: 9
-  # 一次筛选 prompt 里塞多少篇论文（控制单请求 token）
+  # token 限速（申请额度：每分钟 100000，默认留约 10% 余量）
+  tokens_per_minute: 90000
+  # 一次筛选 prompt 里塞多少篇论文（控制单请求 token；用大上下文模型可调大）
   filter_batch_size: 20
+  # 单次请求最大输出 token
+  filter_max_tokens: 2048
+  summarize_max_tokens: 1024
   # 总结输出语言
   language: 中文
 

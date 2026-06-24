@@ -5,6 +5,7 @@
     python main.py -c my.yaml       # 指定配置文件
     python main.py --dry-run        # 只爬取并打印候选论文，不调用 LLM、不推送（不耗 token）
     python main.py --no-dedup       # 不跳过历史已推送过的论文
+    python main.py --list-models    # 列出可调用模型(校验 api-key / 连通性)
 """
 from __future__ import annotations
 
@@ -76,13 +77,31 @@ def run(config_path: str, dedup: bool = True, dry_run: bool = False) -> int:
     return 0
 
 
+def list_models(config_path: str) -> int:
+    cfg = load_config(config_path)
+    llm = LLMClient(cfg.llm)
+    print(f"连接 {cfg.llm.base_url} ...")
+    try:
+        models = llm.list_models()
+    except Exception as e:  # noqa: BLE001
+        print(f"获取模型列表失败（请检查 api-key 是否正确、网络是否可达）: {e}", file=sys.stderr)
+        return 1
+    print("可调用模型 id：")
+    for m in models:
+        print(f"  - {m}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="ai-help-all: 每日 arxiv 论文推送")
     parser.add_argument("-c", "--config", default="config.yaml", help="配置文件路径")
     parser.add_argument("--no-dedup", action="store_true", help="不跳过历史已推送过的论文")
     parser.add_argument("--dry-run", action="store_true", help="只爬取并打印候选，不调用 LLM、不推送")
+    parser.add_argument("--list-models", action="store_true", help="列出可调用模型并退出")
     args = parser.parse_args()
     try:
+        if args.list_models:
+            return list_models(args.config)
         return run(args.config, dedup=not args.no_dedup, dry_run=args.dry_run)
     except (FileNotFoundError, ValueError) as e:
         print(f"配置错误: {e}", file=sys.stderr)
