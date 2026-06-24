@@ -27,19 +27,21 @@ class ArxivConfig:
 class LLMConfig:
     base_url: str = "https://models.sjtu.edu.cn/api/v1"
     api_key: str = ""
-    # 筛选用大上下文模型（minimax-m2.7 上下文 192k，适合批量塞摘要）
-    filter_model: str = "minimax-m2.7"
-    # 总结用最强模型（glm-5.1 上下文 128k，质量好）
-    summarize_model: str = "glm-5.1"
+    # 筛选模型：glm-5.1 直接返回 JSON、稳定可靠，适合批量结构化打分
+    filter_model: str = "glm-5.1"
+    # 总结模型：minimax-m2.7 总结质量高（注意它是思考模型，需较大 max_tokens）
+    summarize_model: str = "minimax-m2.7"
     # 速率限制（申请额度：每分钟 10 次请求，留 1 余量）
     requests_per_minute: int = 9
     # token 限速（申请额度：每分钟 100000 token，默认留约 10% 余量）
     tokens_per_minute: int = 90000
+    # 并发线程数（同时在途的请求数；受上面的限速器约束，调大可隐藏网络延迟）
+    max_concurrency: int = 8
     # 一次筛选 prompt 里塞多少篇论文
     filter_batch_size: int = 20
-    # 单次请求的最大输出 token
+    # 单次请求的最大输出 token（思考模型会先消耗 token 做推理，需留足余量）
     filter_max_tokens: int = 2048
-    summarize_max_tokens: int = 1024
+    summarize_max_tokens: int = 2048
     language: str = "中文"
 
 

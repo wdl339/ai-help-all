@@ -1,8 +1,12 @@
-"""论文总结：对筛选出的论文逐篇生成结构化中文总结。"""
+"""论文总结：对筛选出的论文并发生成结构化中文总结。"""
 from __future__ import annotations
+
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .arxiv_crawler import Paper
 from .config import Config
+from .events import Emitter, noop_emit
 from .llm_client import LLMClient
 
 _SUM_SYS = """你是一个资深科研助理。请基于给定论文的标题和摘要，用{lang}写一段精炼总结，帮助研究者快速判断是否值得精读。
@@ -32,13 +36,36 @@ def summarize_paper(llm: LLMClient, cfg: Config, paper: Paper) -> str:
     )
 
 
-def summarize_all(llm: LLMClient, cfg: Config, papers: list[Paper]) -> list[Paper]:
+def summarize_all(
+    llm: LLMClient,
+    cfg: Config,
+    papers: list[Paper],
+    emit: Emitter | None = None,
+) -> list[Paper]:
+    """并发地为每篇论文生成总结（每篇一个请求，互相独立）。"""
+    emit = emit or noop_emit
     total = len(papers)
-    for i, p in enumerate(papers, 1):
-        print(f"  [总结] {i}/{total}: {p.title[:60]} ...")
+    done = 0
+    lock = threading.Lock()
+    workers = max(1, min(cfg.llm.max_concurrency, total))
+
+    def work(p: Paper) -> Paper:
         try:
             p.summary = summarize_paper(llm, cfg, p)
         except RuntimeError as e:
-            print(f"  [总结] 失败，跳过: {e}")
+            emit("error", {"message": f"总结失败: {p.title[:40]}: {e}"})
             p.summary = "(总结生成失败)"
+        return p
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = [ex.submit(work, p) for p in papers]
+        for fut in as_completed(futures):
+            p = fut.result()
+            with lock:
+                done += 1
+                emit("summarize_progress", {"done": done, "total": total})
+            emit(
+                "paper_summarized",
+                {"short_id": p.short_id, "title": p.title, "summary": p.summary},
+            )
     return papers

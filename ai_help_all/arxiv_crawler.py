@@ -30,6 +30,24 @@ class Paper:
         # 形如 2406.01234v1 -> 2406.01234
         return self.arxiv_id.split("v")[0]
 
+    def to_dict(self) -> dict:
+        """序列化为可 JSON 化的 dict（用于 SSE 推送与 JSON 日报）。"""
+        return {
+            "arxiv_id": self.arxiv_id,
+            "short_id": self.short_id,
+            "title": self.title,
+            "authors": self.authors,
+            "abstract": self.abstract,
+            "categories": self.categories,
+            "published": self.published.isoformat() if self.published else None,
+            "updated": self.updated.isoformat() if self.updated else None,
+            "pdf_url": self.pdf_url,
+            "entry_url": self.entry_url,
+            "score": self.score,
+            "reason": self.reason,
+            "summary": self.summary,
+        }
+
 
 def _to_paper(result: arxiv.Result) -> Paper:
     return Paper(

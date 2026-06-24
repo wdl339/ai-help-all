@@ -1,6 +1,7 @@
-"""推送：生成 markdown 日报，可选邮件发送(HTML)。"""
+"""推送：生成 markdown / JSON 日报，可选邮件发送(HTML)。"""
 from __future__ import annotations
 
+import json
 import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
@@ -38,6 +39,36 @@ def write_markdown(content: str, out_dir: str | Path, date_str: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"digest-{date_str}.md"
     path.write_text(content, encoding="utf-8")
+    return path
+
+
+def write_json(papers: list[Paper], out_dir: str | Path, date_str: str) -> Path:
+    """写出当日 JSON 日报，并维护一个 index.json 历史列表（供网页读取）。"""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "date": date_str,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "count": len(papers),
+        "papers": [p.to_dict() for p in papers],
+    }
+    path = out_dir / f"digest-{date_str}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 维护历史索引
+    index_path = out_dir / "index.json"
+    history: list[dict] = []
+    if index_path.exists():
+        try:
+            history = json.loads(index_path.read_text(encoding="utf-8")).get("digests", [])
+        except (json.JSONDecodeError, OSError):
+            history = []
+    history = [h for h in history if h.get("date") != date_str]
+    history.append({"date": date_str, "count": len(papers), "file": path.name})
+    history.sort(key=lambda h: h["date"], reverse=True)
+    index_path.write_text(
+        json.dumps({"digests": history}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return path
 
 
@@ -88,12 +119,19 @@ def send_email(cfg: Config, papers: list[Paper], date_str: str) -> None:
         print(f"  [推送] 邮件发送失败: {e}")
 
 
-def push_all(cfg: Config, papers: list[Paper]) -> Path | None:
+def push_all(cfg: Config, papers: list[Paper]) -> dict:
+    """生成日报并推送，返回产物路径信息。"""
     date_str = datetime.now().strftime("%Y-%m-%d")
-    md_path = None
+    result: dict = {"date": date_str, "markdown": None, "json": None}
+
+    # JSON 始终生成（网页读取）
+    json_path = write_json(papers, "digests", date_str)
+    result["json"] = str(json_path)
+
     if cfg.push.markdown:
         content = build_markdown(papers, date_str)
         md_path = write_markdown(content, "digests", date_str)
-        print(f"  [推送] markdown 日报已生成: {md_path}")
+        result["markdown"] = str(md_path)
+
     send_email(cfg, papers, date_str)
-    return md_path
+    return result

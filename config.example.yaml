@@ -5,19 +5,23 @@
 arxiv:
   # 关注的 arxiv 主分类，见 https://arxiv.org/category_taxonomy
   categories:
-    - cs.AI
-    - cs.CL
-    - cs.LG
+    - cs.DC   # 分布式/并行计算
+    - cs.LG   # 机器学习
+    - cs.AR   # 硬件体系结构
+    - cs.PF   # 性能
+    - cs.AI   # 人工智能
+    - cs.CL   # NLP / 大模型
   # 只抓取最近 N 天提交/更新的论文（一般设 1 表示“今天”，周一可设 3 把周末补上）
   days_back: 1
   # 每次最多从 arxiv 拉取多少篇候选（拉取上限，越大越全但越慢）
-  max_results: 200
+  max_results: 300
 
 # ---- 你的研究兴趣（用自然语言描述，越具体筛得越准）----
 interests: |
-  我关注大语言模型的强化学习训练（RLHF / RLVR / GRPO）、
-  Agent 与工具调用、多模态大模型、以及高效推理/训练（量化、长上下文）。
-  我不太关心纯理论证明、硬件电路、纯 CV 检测分割类工作。
+  我的主要研究方向是 MLSys / AI Infra（机器学习系统与基础设施），关注训练、推理、
+  部署、调度、运行时、编译、GPU/NPU 利用、Agent 系统、端侧/on-device/资源受限 AI 等。
+  AI 算法类工作（新模型、训练方法、多模态等）也读一些，但优先级低于系统/基础设施类。
+  不太关心纯理论证明、与系统无关的纯 CV 检测分割类工作。
 
 # 相关性打分阈值（1-10），>= 该分数的论文才会被总结并推送
 relevance_threshold: 6
@@ -25,30 +29,32 @@ relevance_threshold: 6
 max_summarize: 15
 
 # ---- LLM 设置 ----
-# 可用模型(SJTU 交我算 API)调用名 / 上下文长度 / 侧重：
-#   glm-5.1            GLM-5.1                 128k   代码与长程任务(最强，默认总结模型)
-#   minimax-m2.7       MiniMax-M2.7            192k   智能体任务/长上下文(默认筛选模型)
-#   deepseek-chat      DeepSeek V3.2 常规模式   32k   通用文本
-#   deepseek-reasoner  DeepSeek V3.2 思考模式   32k   复杂推理(不接受 temperature)
-#   qwen3.5-27b        Qwen3.5-27B            256k   多模态/长上下文
+# 可用模型(SJTU 交我算 API)调用名 / 上下文 / 说明：
+#   glm-5.1            GLM-5.1        128k  强；直接返回内容，适合批量打分（默认筛选模型）
+#   minimax-m2.7       MiniMax-M2.7   192k  强；思考模型，总结质量高（默认总结模型，需较大 max_tokens）
+#   deepseek-chat      DeepSeek V3.2  32k   通用文本
+#   deepseek-reasoner  DeepSeek V3.2  32k   复杂推理(不接受 temperature)
+#   qwen3.5-27b        Qwen3.5-27B    256k  最快，备选筛选模型
 # 用 `python main.py --list-models` 可校验密钥并查看实际可用模型 id。
 llm:
   base_url: https://models.sjtu.edu.cn/api/v1
   # 推荐用环境变量 AI_HELP_ALL_API_KEY，留空则读环境变量（不要把真实 key 写进会上传 git 的文件！）
   api_key: ""
-  # 筛选用模型：批量塞摘要，选上下文大的（minimax-m2.7=192k）
-  filter_model: minimax-m2.7
-  # 总结用模型：选最强的（glm-5.1）
-  summarize_model: glm-5.1
+  # 筛选用模型（批量结构化打分，glm 直接返回 JSON、稳定）
+  filter_model: glm-5.1
+  # 总结用模型（minimax 总结质量高；它是思考模型，summarize_max_tokens 要留足）
+  summarize_model: minimax-m2.7
   # 请求数限速（申请额度：每分钟 10 次，留 1 余量）
   requests_per_minute: 9
   # token 限速（申请额度：每分钟 100000，默认留约 10% 余量）
   tokens_per_minute: 90000
+  # 并发线程数（同时在途请求数，受限速器约束；调大可隐藏网络延迟、加速）
+  max_concurrency: 8
   # 一次筛选 prompt 里塞多少篇论文（控制单请求 token；用大上下文模型可调大）
   filter_batch_size: 20
-  # 单次请求最大输出 token
+  # 单次请求最大输出 token（思考模型如 minimax 会先用 token 推理，需留足余量）
   filter_max_tokens: 2048
-  summarize_max_tokens: 1024
+  summarize_max_tokens: 2048
   # 总结输出语言
   language: 中文
 

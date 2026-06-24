@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ai-help-all · 论文日报仪表盘</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
+    --fg: #e6e9ef; --muted: #9aa3b2; --accent: #5b9dff; --accent2: #7c5cff;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  header {
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    position: sticky; top: 0; background: rgba(15,17,21,0.92); backdrop-filter: blur(8px); z-index: 10;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header h1 .em { color: var(--accent); }
+  .grow { flex: 1; }
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  label.chk { color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  button {
+    background: var(--accent); color: #fff; border: none; padding: 8px 18px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { background: #394150; cursor: not-allowed; }
+  button.ghost { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); }
+  select { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  main { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
+  .cfg { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
+  .cfg b { color: var(--fg); }
+  .stages { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stage {
+    flex: 1; min-width: 120px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .stage .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .stage .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a4150; flex: none; }
+  .stage.active .dot { background: var(--yellow); animation: pulse 1s infinite; }
+  .stage.done .dot { background: var(--green); }
+  .stage .msg { color: var(--muted); font-size: 12px; margin-top: 3px; min-height: 16px; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg,var(--accent),var(--accent2)); transition: width .3s; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; letter-spacing: .03em; }
+  .feed { max-height: 180px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .feed .row { padding: 2px 0; color: var(--muted); }
+  .feed .row.err { color: var(--red); }
+  .scored { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
+  .pill { background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .badge { font-weight: 700; border-radius: 6px; padding: 0 7px; font-size: 12px; color: #0b0d11; }
+  .b-hi { background: var(--green); } .b-mid { background: var(--yellow); } .b-lo { background: #5a6472; color: #fff; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .card .top { display: flex; gap: 10px; align-items: flex-start; }
+  .card .title { font-size: 15.5px; font-weight: 650; margin: 0; flex: 1; }
+  .card .meta { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
+  .card .reason { color: var(--accent); font-size: 13px; margin: 4px 0 10px; }
+  .card a { color: var(--accent); text-decoration: none; }
+  .card a:hover { text-decoration: underline; }
+  .summary { background: var(--panel2); border-radius: 8px; padding: 12px 14px; font-size: 13.5px; }
+  .summary.loading { color: var(--muted); font-style: italic; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { color: var(--muted); text-align: center; padding: 30px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ai-help-all <span class="em">论文日报</span></h1>
+  <div class="grow"></div>
+  <div class="controls">
+    <select id="history" title="查看历史日报"><option value="">历史日报…</option></select>
+    <label class="chk"><input type="checkbox" id="dedup" checked /> 去重</label>
+    <label class="chk"><input type="checkbox" id="dryrun" /> 试跑(不调LLM)</label>
+    <button id="runBtn">▶ 运行</button>
+  </div>
+</header>
+<main>
+  <div class="cfg" id="cfg">加载配置中…</div>
+
+  <div class="stages" id="stages"></div>
+
+  <div class="panel">
+    <h2>运行日志</h2>
+    <div class="feed" id="log"><div class="row">点击右上角「运行」开始。</div></div>
+  </div>
+
+  <div class="panel hidden" id="scorePanel">
+    <h2>实时打分 <span id="scoreProg" style="color:var(--muted)"></span></h2>
+    <div class="bar"><div id="scoreBar"></div></div>
+    <div class="scored" id="scored" style="margin-top:10px"></div>
+  </div>
+
+  <div class="panel hidden" id="sumPanel">
+    <h2>总结进度 <span id="sumProg" style="color:var(--muted)"></span></h2>
+    <div class="bar"><div id="sumBar"></div></div>
+  </div>
+
+  <h2 style="color:var(--muted);font-size:14px" id="resultsHead" class="hidden">入选论文</h2>
+  <div id="results"></div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STAGES = [
+  ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
+  ["summarize", "生成总结"], ["push", "推送/归档"],
+];
+let cards = {}; // short_id -> {el, summaryEl}
+
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function renderSummary(text) {
+  let h = escapeHtml(text);
+  h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/\n/g, "<br>");
+  return h;
+}
+function badgeClass(score) { return score >= 8 ? "b-hi" : score >= 6 ? "b-mid" : "b-lo"; }
+
+function initStages() {
+  $("stages").innerHTML = STAGES.map(([k, label]) =>
+    `<div class="stage" id="stage-${k}"><div class="name"><span class="dot"></span>${label}</div><div class="msg" id="msg-${k}"></div></div>`
+  ).join("");
+}
+function setStage(name, status, msg) {
+  const el = $("stage-" + name);
+  if (!el) return;
+  el.classList.remove("active", "done");
+  if (status === "start") el.classList.add("active");
+  if (status === "done") el.classList.add("done");
+  if (msg != null) $("msg-" + name).textContent = msg;
+}
+function log(msg, isErr) {
+  const row = document.createElement("div");
+  row.className = "row" + (isErr ? " err" : "");
+  row.textContent = msg;
+  $("log").appendChild(row);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function makeCard(p) {
+  const el = document.createElement("div");
+  el.className = "card";
+  const authors = (p.authors || []).slice(0, 6).join(", ") + ((p.authors||[]).length > 6 ? " 等" : "");
+  el.innerHTML = `
+    <div class="top">
+      <span class="badge ${badgeClass(p.score)}">${p.score}</span>
+      <h3 class="title">${escapeHtml(p.title)}</h3>
+    </div>
+    <div class="reason">${escapeHtml(p.reason || "")}</div>
+    <div class="meta">${escapeHtml(authors)}</div>
+    <div class="meta">${escapeHtml((p.categories||[]).join(", "))} ·
+      <a href="${p.entry_url}" target="_blank">摘要页</a> ·
+      <a href="${p.pdf_url}" target="_blank">PDF</a></div>
+    <div class="summary loading"><span class="spinner"></span>总结生成中…</div>`;
+  $("results").appendChild(el);
+  cards[p.short_id] = { el, summaryEl: el.querySelector(".summary") };
+}
+
+function resetUI() {
+  cards = {};
+  $("results").innerHTML = "";
+  $("log").innerHTML = "";
+  $("scored").innerHTML = "";
+  $("scoreBar").style.width = "0";
+  $("sumBar").style.width = "0";
+  $("scoreProg").textContent = "";
+  $("sumProg").textContent = "";
+  $("scorePanel").classList.add("hidden");
+  $("sumPanel").classList.add("hidden");
+  $("resultsHead").classList.add("hidden");
+  initStages();
+}
+
+function handle(ev) {
+  const { type, payload } = ev;
+  switch (type) {
+    case "stage":
+      setStage(payload.name, payload.status, payload.message);
+      log(`[${payload.name}] ${payload.message || payload.status}`);
+      if (payload.name === "filter" && payload.status === "start") $("scorePanel").classList.remove("hidden");
+      if (payload.name === "summarize" && payload.status === "start") $("sumPanel").classList.remove("hidden");
+      break;
+    case "score_progress": {
+      const pct = payload.total ? (payload.done / payload.total * 100) : 0;
+      $("scoreBar").style.width = pct + "%";
+      $("scoreProg").textContent = `${payload.done}/${payload.total}`;
+      break;
+    }
+    case "scored_batch":
+      (payload.papers || []).forEach(p => {
+        const pill = document.createElement("div");
+        pill.className = "pill";
+        pill.innerHTML = `<span class="badge ${badgeClass(p.score)}">${p.score}</span>${escapeHtml(p.title.slice(0,48))}`;
+        $("scored").prepend(pill);
+      });
+      while ($("scored").children.length > 80) $("scored").lastChild.remove();
+      break;
+    case "selected":
+      $("resultsHead").classList.remove("hidden");
+      (payload.papers || []).forEach(makeCard);
+      log(`入选 ${(payload.papers||[]).length} 篇，开始总结…`);
+      break;
+    case "summarize_progress": {
+      const pct = payload.total ? (payload.done / payload.total * 100) : 0;
+      $("sumBar").style.width = pct + "%";
+      $("sumProg").textContent = `${payload.done}/${payload.total}`;
+      break;
+    }
+    case "paper_summarized": {
+      const c = cards[payload.short_id];
+      if (c) { c.summaryEl.classList.remove("loading"); c.summaryEl.innerHTML = renderSummary(payload.summary); }
+      break;
+    }
+    case "dry_run_candidates":
+      $("resultsHead").classList.remove("hidden");
+      $("results").innerHTML = (payload.papers||[]).map(p =>
+        `<div class="card"><div class="meta">[${escapeHtml((p.categories||[]).join(", "))}]</div>
+         <h3 class="title">${escapeHtml(p.title)}</h3></div>`).join("");
+      break;
+    case "pushed":
+      log(`已归档: ${payload.json || ""}${payload.markdown ? "  " + payload.markdown : ""}`);
+      break;
+    case "error":
+      log(payload.message, true);
+      break;
+    case "done":
+      log(`完成 ✅ 共 ${payload.count} 篇`);
+      finish();
+      break;
+  }
+}
+
+let es = null;
+function finish() {
+  if (es) { es.close(); es = null; }
+  $("runBtn").disabled = false;
+  $("runBtn").textContent = "▶ 运行";
+}
+function startRun() {
+  resetUI();
+  $("runBtn").disabled = true;
+  $("runBtn").textContent = "运行中…";
+  const dry = $("dryrun").checked, dedup = $("dedup").checked;
+  es = new EventSource(`/api/run?dry_run=${dry}&dedup=${dedup}`);
+  es.onmessage = (e) => {
+    let data; try { data = JSON.parse(e.data); } catch { return; }
+    if (data.type === "_end") { finish(); return; }
+    handle(data);
+  };
+  es.onerror = () => { log("连接中断。", true); finish(); };
+}
+
+async function loadConfig() {
+  try {
+    const c = await (await fetch("/api/config")).json();
+    if (c.error) { $("cfg").innerHTML = `配置错误：${escapeHtml(c.error)}`; return; }
+    $("cfg").innerHTML = `分类 <b>${c.categories.join(" / ")}</b> · 近 <b>${c.days_back}</b> 天 · 阈值 <b>${c.relevance_threshold}</b> · 最多 <b>${c.max_summarize}</b> 篇 · 筛选 <b>${escapeHtml(c.filter_model)}</b> / 总结 <b>${escapeHtml(c.summarize_model)}</b> · 并发 <b>${c.max_concurrency}</b>`;
+  } catch { $("cfg").textContent = "无法加载配置。"; }
+}
+
+async function loadHistory() {
+  try {
+    const h = await (await fetch("/api/history")).json();
+    const sel = $("history");
+    (h.digests || []).forEach(d => {
+      const o = document.createElement("option");
+      o.value = d.date; o.textContent = `${d.date} (${d.count} 篇)`;
+      sel.appendChild(o);
+    });
+  } catch {}
+}
+
+async function showHistory(date) {
+  if (!date) return;
+  resetUI();
+  STAGES.forEach(([k]) => setStage(k, "done"));
+  const d = await (await fetch("/api/digest/" + date)).json();
+  if (d.error) { log("加载失败: " + d.error, true); return; }
+  $("resultsHead").classList.remove("hidden");
+  (d.papers || []).forEach(p => {
+    makeCard(p);
+    const c = cards[p.short_id];
+    if (c && p.summary) { c.summaryEl.classList.remove("loading"); c.summaryEl.innerHTML = renderSummary(p.summary); }
+  });
+  log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
+}
+
+$("runBtn").addEventListener("click", startRun);
+$("history").addEventListener("change", (e) => showHistory(e.target.value));
+initStages();
+loadConfig();
+loadHistory();
+</script>
+</body>
+</html>
