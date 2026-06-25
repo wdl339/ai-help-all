@@ -108,7 +108,7 @@ push:
   # 始终会在 ./digests/ 下生成 markdown 日报
   markdown: true
   # 邮件推送（可选）。这里只填 SMTP 连接参数；“是否发邮件”改由运行时控制：
-  #   CLI：python main.py --email      网页：顶部工具栏勾选「发邮件」  （默认都不发）
+  #   CLI：python main.py --email      网页：顶部工具栏勾选「发送邮件」（默认都不发）
   # 常见 SMTP：QQ=smtp.qq.com / 163=smtp.163.com / Gmail=smtp.gmail.com
   # 端口与加密配套：SSL 用 465 且 use_ssl: true；STARTTLS 用 587 且 use_ssl: false
   email:

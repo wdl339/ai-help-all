@@ -26,9 +26,6 @@ def make_print_emitter() -> Emitter:
             print(f"{mark} [{name}] {msg}".rstrip())
         elif event_type == "log":
             print(f"  {payload.get('message', '')}")
-        elif event_type == "paper_scored":
-            p = payload.get("paper", {})
-            print(f"    · 打分 {p.get('score')}/10  {p.get('title', '')[:60]}")
         elif event_type == "paper_summarized":
             print(f"    · 已总结  {payload.get('title', '')[:60]}")
         elif event_type == "error":

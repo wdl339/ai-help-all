@@ -63,7 +63,7 @@ class LLMConfig:
 
 @dataclass
 class EmailConfig:
-    # 注意：是否发邮件已改为“运行时”控制（CLI --email / 网页勾选「发邮件」），默认关闭，
+    # 注意：是否发邮件已改为“运行时”控制（CLI --email / 网页勾选「发送邮件」），默认关闭，
     # 不再放在 config 里。这里只保留 SMTP 连接参数。
     smtp_host: str = ""
     smtp_port: int = 465
