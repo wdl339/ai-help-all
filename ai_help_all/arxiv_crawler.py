@@ -26,6 +26,7 @@ class Paper:
     # 后续由筛选/总结阶段填充
     score: int = 0
     reason: str = ""
+    tag: str = ""          # 分类标签（来自配置的 tags）
     summary: str = ""
     abstract_zh: str = ""  # 摘要中文翻译
     affiliations: list[str] = field(default_factory=list)  # 作者单位/发表机构
@@ -50,6 +51,7 @@ class Paper:
             "entry_url": self.entry_url,
             "score": self.score,
             "reason": self.reason,
+            "tag": self.tag,
             "summary": self.summary,
             "abstract_zh": self.abstract_zh,
             "affiliations": self.affiliations,

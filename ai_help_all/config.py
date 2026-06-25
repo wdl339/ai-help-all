@@ -86,6 +86,8 @@ class Config:
     relevance_threshold: int = 6
     # 每份日报（每天一份）最多自动 AI 总结多少篇；多天会逐天各出一份日报
     max_summarize: int = 15
+    # 给入选论文打的标签集合（在 config.yaml 的 tags 里定义）；"其他" 会自动确保存在
+    tags: list[str] = field(default_factory=lambda: ["其他"])
     # 是否下载 PDF 首页提取作者单位/发表机构（关掉可省下载时间）
     fetch_affiliations: bool = True
     # 提取作者单位时，PDF 首页文本截断到多少字符（首页含作者/单位即可）
@@ -123,11 +125,17 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     email.password = os.getenv("AI_HELP_ALL_SMTP_PASSWORD") or email.password
     push = PushConfig(markdown=push_raw.get("markdown", True), email=email)
 
+    # 标签只来自 config.yaml；代码不内置任何领域分类，仅保证有 "其他" 兜底
+    tags = [str(t) for t in (raw.get("tags") or [])]
+    if "其他" not in tags:
+        tags.append("其他")
+
     return Config(
         arxiv=arxiv,
         interests=raw.get("interests", "").strip(),
         relevance_threshold=int(raw.get("relevance_threshold", 6)),
         max_summarize=int(raw.get("max_summarize", 20)),
+        tags=tags,
         fetch_affiliations=bool(raw.get("fetch_affiliations", True)),
         affiliation_pdf_chars=int(raw.get("affiliation_pdf_chars", 1800)),
         max_authors_shown=int(raw.get("max_authors_shown", 6)),

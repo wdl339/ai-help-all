@@ -12,21 +12,27 @@ from .config import Config
 from .events import Emitter, noop_emit
 from .llm_client import LLMClient
 
-_FILTER_SYS = """你是一个科研论文筛选助手。用户会给出他的研究兴趣，以及一批 arxiv 论文(含编号、标题、摘要)。
-请你判断每篇论文与用户兴趣的相关程度，按 1-10 打分(10=高度相关且重要，1=完全不相关)。
-只返回 JSON 数组，每个元素形如 {"index": <论文序号>, "score": <1-10整数>, "reason": "<一句中文理由>"}。
+_FILTER_SYS = """你是一个科研论文筛选助手。用户会给出他的研究兴趣、一个可用标签列表，以及一批 arxiv 论文(含编号、标题、摘要)。
+请你判断每篇论文与用户兴趣的相关程度，按 1-10 打分(10=高度相关且重要，1=完全不相关)；
+并从"可用标签"中为每篇选一个最贴切的标签(tag)，无法明确归类时用 "其他"。
+只返回 JSON 数组，每个元素形如 {"index": <论文序号>, "score": <1-10整数>, "reason": "<一句中文理由>", "tag": "<标签>"}。
 不要输出 JSON 以外的任何内容。"""
 
 
-def _build_user_prompt(interests: str, batch: list[Paper], abstract_chars: int) -> str:
-    lines = [f"# 我的研究兴趣\n{interests}\n", "# 待评估论文"]
+def _build_user_prompt(interests: str, batch: list[Paper], abstract_chars: int,
+                       tags: list[str]) -> str:
+    lines = [
+        f"# 我的研究兴趣\n{interests}\n",
+        f"# 可用标签（tag 必须从中选一个）\n{', '.join(tags)}\n",
+        "# 待评估论文",
+    ]
     for i, p in enumerate(batch):
         abstract = p.abstract[:abstract_chars]
         lines.append(
             f"\n[{i}] 标题: {p.title}\n分类: {', '.join(p.categories)}\n摘要: {abstract}"
         )
     lines.append(
-        '\n请输出 JSON 数组，形如: [{"index":0,"score":8,"reason":"..."}]'
+        '\n请输出 JSON 数组，形如: [{"index":0,"score":8,"reason":"...","tag":"训练"}]'
     )
     return "\n".join(lines)
 
@@ -48,8 +54,8 @@ def _parse_scores(text: str) -> list[dict]:
 
 
 def _score_one_batch(llm: LLMClient, cfg: Config, batch: list[Paper]) -> int:
-    """对单个批次打分，写回 score/reason（就地修改），返回成功解析的条数。"""
-    prompt = _build_user_prompt(cfg.interests, batch, cfg.llm.filter_abstract_chars)
+    """对单个批次打分+打标签（就地修改），返回成功解析的条数。"""
+    prompt = _build_user_prompt(cfg.interests, batch, cfg.llm.filter_abstract_chars, cfg.tags)
     out = llm.chat(
         cfg.llm.filter_model,
         [
@@ -59,6 +65,7 @@ def _score_one_batch(llm: LLMClient, cfg: Config, batch: list[Paper]) -> int:
         temperature=0.0,
         max_tokens=cfg.llm.filter_max_tokens,
     )
+    tagset = set(cfg.tags)
     parsed = 0
     for item in _parse_scores(out):
         idx = item.get("index")
@@ -68,6 +75,8 @@ def _score_one_batch(llm: LLMClient, cfg: Config, batch: list[Paper]) -> int:
             except (TypeError, ValueError):
                 batch[idx].score = 0
             batch[idx].reason = str(item.get("reason", "")).strip()
+            tag = str(item.get("tag", "")).strip()
+            batch[idx].tag = tag if tag in tagset else "其他"
             parsed += 1
     return parsed
 

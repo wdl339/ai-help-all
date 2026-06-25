@@ -192,6 +192,7 @@ def _paper_from_dict(d: dict) -> Paper:
         entry_url=d.get("entry_url", ""),
         score=d.get("score", 0),
         reason=d.get("reason", ""),
+        tag=d.get("tag", ""),
     )
 
 
@@ -221,6 +222,7 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
             "today": today,
             "relevance_threshold": cfg.relevance_threshold,
             "max_summarize": cfg.max_summarize,
+            "tags": cfg.tags,
             "filter_model": cfg.llm.filter_model,
             "summarize_model": cfg.llm.summarize_model,
             "max_concurrency": cfg.llm.max_concurrency,

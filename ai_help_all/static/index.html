@@ -7,9 +7,9 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235b9dff'/%3E%3Cstop offset='1' stop-color='%237c5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='24' fill='url(%23g)'/%3E%3Ctext x='50' y='62' font-size='44' font-family='Arial,sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E" />
 <style>
   :root {
-    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
-    --fg: #e6e9ef; --muted: #9aa3b2; --accent: #5b9dff; --accent2: #7c5cff;
-    --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --bg: #f6f7f9; --panel: #ffffff; --panel2: #eef1f5; --border: #e2e6ec;
+    --fg: #1c2128; --muted: #667085; --accent: #2f6feb; --accent2: #7c5cff;
+    --green: #1a7f37; --yellow: #b8860b; --red: #d1242f;
   }
   * { box-sizing: border-box; }
   body {
@@ -20,7 +20,7 @@
   header {
     padding: 16px 24px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    position: sticky; top: 0; background: rgba(15,17,21,0.92); backdrop-filter: blur(8px); z-index: 10;
+    position: sticky; top: 0; background: rgba(255,255,255,0.85); backdrop-filter: blur(8px); z-index: 10;
   }
   .brand { display: flex; align-items: center; gap: 11px; }
   .logo {
@@ -40,7 +40,7 @@
     background: var(--accent); color: #fff; border: none; padding: 8px 18px;
     border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
   }
-  button:disabled { background: #394150; cursor: not-allowed; }
+  button:disabled { background: #c2c8d2; cursor: not-allowed; }
   button.ghost { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); }
   select { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
   input[type=date], input[type=number] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-size: 13px; }
@@ -54,7 +54,7 @@
     border-radius: 10px; padding: 10px 12px;
   }
   .stage .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
-  .stage .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a4150; flex: none; }
+  .stage .dot { width: 9px; height: 9px; border-radius: 50%; background: #c2c8d2; flex: none; }
   .stage.active .dot { background: var(--yellow); animation: pulse 1s infinite; }
   .stage.done .dot { background: var(--green); }
   .stage .msg { color: var(--muted); font-size: 12px; margin-top: 3px; min-height: 16px; }
@@ -68,10 +68,16 @@
   .feed .row.err { color: var(--red); }
   .scored { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
   .pill { background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
-  .badge { font-weight: 700; border-radius: 6px; padding: 0 7px; font-size: 12px; color: #0b0d11; }
+  .badge { font-weight: 700; border-radius: 6px; padding: 0 7px; font-size: 12px; color: #fff; }
   .b-hi { background: var(--green); } .b-mid { background: var(--yellow); } .b-lo { background: #5a6472; color: #fff; }
   .day-header { margin: 18px 0 12px; padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 6px; font-weight: 700; font-size: 14px; }
   .day-header .sub { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+  details.grp { margin: 10px 0; }
+  details.grp > summary { cursor: pointer; user-select: none; padding: 6px 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; font-weight: 600; font-size: 13px; color: var(--fg); }
+  details.grp[open] > summary { margin-bottom: 10px; }
+  details.grp .grp-count { color: var(--muted); font-weight: 400; }
+  details.grp .grp-cards { padding-left: 2px; }
+  .tagchip { flex: none; align-self: flex-start; background: var(--panel2); border: 1px solid var(--border); color: var(--accent); border-radius: 999px; padding: 1px 9px; font-size: 12px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
   .card .top { display: flex; gap: 10px; align-items: flex-start; }
   .card .title { font-size: 15.5px; font-weight: 650; margin: 0; flex: 1; }
@@ -110,7 +116,7 @@
     <label class="chk" title="参考日期（默认今天）；窗口截止于该日期的分界点">日期 <input type="date" id="runDate" /></label>
     <label class="chk" title="从选定日期往前 N 天（窗口 = 选定日期分界点 往前 N 天）">天数 <input type="number" id="runDaysBack" min="1" max="14" /></label>
     <label class="chk" title="忽略历史去重，重新处理"><input type="checkbox" id="refresh" /> 重新生成</label>
-    <label class="chk"><input type="checkbox" id="dryrun" /> 试跑</label>
+    <label class="chk"><input type="checkbox" id="dryrun" /> 仅爬取</label>
     <button id="runBtn">▶ 运行</button>
     <button id="stopBtn" class="ghost" style="display:none">■ 停止</button>
   </div>
@@ -139,10 +145,11 @@
 
   <div id="resultsHead" class="hidden" style="display:flex;align-items:center;gap:10px;margin:8px 0">
     <h2 style="color:var(--muted);font-size:14px;margin:0">入选论文</h2>
-    <span style="color:var(--muted);font-size:12.5px">排序</span>
+    <span style="color:var(--muted);font-size:12.5px">分组</span>
     <select id="sortMode" style="padding:4px 8px">
       <option value="score">按分数</option>
-      <option value="summarized">已总结优先</option>
+      <option value="tag">按标签</option>
+      <option value="summarized">按是否总结</option>
     </select>
   </div>
   <div id="results"></div>
@@ -154,11 +161,14 @@ let currentDate = "";   // 历史查看/单天运行对应的日报日期
 let currentDay = "";    // 多天运行时，当前正在处理的那一天
 let currentCardsEl = null;   // 当前天的卡片容器
 let boundaryHour = 8, tzOffset = 8;   // 来自配置：分界小时 / 时区偏移
+let TAGS = [];               // 配置里的标签顺序
+let collapsed = {};          // 记住各分组的折叠状态：composite key -> true(已折叠)
 
 // 新建一个"天"的分区（含可选标题 + 卡片容器），返回卡片容器
 function newDaySection(date, index, total) {
   const sec = document.createElement("div");
   sec.className = "day-section";
+  sec.dataset.date = date || "";
   if (total > 1) {
     const h = document.createElement("div");
     h.className = "day-header";
@@ -173,18 +183,62 @@ function newDaySection(date, index, total) {
   return cardsEl;
 }
 
-// 按当前选择的规则给每个"天"分区内的卡片排序
-function applySort() {
-  const mode = $("sortMode") ? $("sortMode").value : "score";
-  document.querySelectorAll(".day-cards").forEach(container => {
-    const items = Array.from(container.querySelectorAll(":scope > .card"));
-    items.sort((a, b) => {
-      const sa = parseInt(a.dataset.score || "0"), sb = parseInt(b.dataset.score || "0");
-      const ma = parseInt(a.dataset.summarized || "0"), mb = parseInt(b.dataset.summarized || "0");
-      if (mode === "summarized" && ma !== mb) return mb - ma;   // 已总结的排前面
-      return sb - sa;                                            // 再按分数降序
+// 计算某卡片在当前模式下的分组键与显示标签
+function groupOf(mode, card) {
+  if (mode === "tag") { const t = card.dataset.tag || "其他"; return { key: "t:" + t, label: t }; }
+  if (mode === "summarized") {
+    const ok = card.dataset.summarized === "1";
+    return { key: ok ? "s:1" : "s:0", label: ok ? "已总结" : "未总结" };
+  }
+  const sc = parseInt(card.dataset.score || "0");
+  return { key: "sc:" + sc, label: sc + " 分" };
+}
+
+function orderKeys(mode, keys) {
+  if (mode === "tag") {
+    const ord = [...TAGS]; if (!ord.includes("其他")) ord.push("其他");
+    return keys.sort((a, b) => {
+      const ia = ord.indexOf(a.slice(2)), ib = ord.indexOf(b.slice(2));
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
     });
-    items.forEach(it => container.appendChild(it));
+  }
+  if (mode === "summarized") return keys.sort((a, b) => a < b ? 1 : -1);  // s:1 在前
+  return keys.sort((a, b) => parseInt(b.slice(3)) - parseInt(a.slice(3))); // 分数降序
+}
+
+// 按当前模式把每个"天"分区内的卡片重组为可折叠分组（保留卡片 DOM 与已填内容）
+function applyGrouping() {
+  const mode = $("sortMode") ? $("sortMode").value : "score";
+  document.querySelectorAll(".day-section").forEach(sec => {
+    const cardsEl = sec.querySelector(".day-cards");
+    if (!cardsEl) return;
+    const date = sec.dataset.date || "";
+    const all = Array.from(sec.querySelectorAll(".card"));
+    if (!all.length) return;
+    const groups = new Map();
+    all.forEach(card => {
+      const g = groupOf(mode, card);
+      if (!groups.has(g.key)) groups.set(g.key, { label: g.label, cards: [] });
+      groups.get(g.key).cards.push(card);
+    });
+    cardsEl.innerHTML = "";   // 卡片已在 all 中持有引用，可安全重排
+    orderKeys(mode, Array.from(groups.keys())).forEach(key => {
+      const g = groups.get(key);
+      g.cards.sort((a, b) => parseInt(b.dataset.score || "0") - parseInt(a.dataset.score || "0"));
+      const det = document.createElement("details");
+      det.className = "grp";
+      const ck = `${mode}::${date}::${key}`;
+      det.open = !collapsed[ck];
+      det.addEventListener("toggle", () => { collapsed[ck] = !det.open; });
+      const sm = document.createElement("summary");
+      sm.innerHTML = `${escapeHtml(g.label)} <span class="grp-count">(${g.cards.length})</span>`;
+      det.appendChild(sm);
+      const box = document.createElement("div");
+      box.className = "grp-cards";
+      g.cards.forEach(c => box.appendChild(c));
+      det.appendChild(box);
+      cardsEl.appendChild(det);
+    });
   });
 }
 const STAGES = [
@@ -229,10 +283,12 @@ function makeCard(p) {
   const el = document.createElement("div");
   el.className = "card";
   const authors = (p.authors || []).slice(0, 6).join(", ") + ((p.authors||[]).length > 6 ? " 等" : "");
+  const tag = p.tag || "其他";
   el.innerHTML = `
     <div class="top">
       <span class="badge ${badgeClass(p.score)}">${p.score}</span>
       <h3 class="title">${escapeHtml(p.title)}</h3>
+      <span class="tagchip">${escapeHtml(tag)}</span>
     </div>
     <div class="reason">${escapeHtml(p.reason || "")}</div>
     <div class="meta">${escapeHtml(authors)}</div>
@@ -242,11 +298,12 @@ function makeCard(p) {
       <a href="${p.pdf_url}" target="_blank">PDF</a></div>
     <div class="summary"></div>
     <details class="abs">
-      <summary>原始摘要 / 中文翻译</summary>
+      <summary class="abs-sum">原始摘要</summary>
       <div class="abs-zh"></div>
       <div class="abs-en"><b>Abstract (EN)</b>: ${escapeHtml(p.abstract || "")}</div>
     </details>`;
   el.dataset.score = p.score;
+  el.dataset.tag = tag;
   el.dataset.summarized = summaryState(p) === "ok" ? "1" : "0";
   (currentCardsEl || $("results")).appendChild(el);
   cards[p.short_id] = {
@@ -254,6 +311,7 @@ function makeCard(p) {
     summaryEl: el.querySelector(".summary"),
     affEl: el.querySelector(".aff-val"),
     absZhEl: el.querySelector(".abs-zh"),
+    absSumEl: el.querySelector(".abs-sum"),
     date: p.date || currentDate,   // 该篇所属日报日期，用于「重新/生成总结」
   };
   renderSummaryArea(p.short_id, p);
@@ -313,7 +371,10 @@ function fillCard(short_id, data) {
   // 未总结的论文不显示“解析中…”，显示“（未生成）”
   c.affEl.textContent = affs.length ? affs.join("；") : (summaryState(data) === "none" ? "（未生成）" : "未识别");
   c.affEl.style.color = noAff ? "var(--muted)" : "var(--fg)";
-  if (data.abstract_zh) c.absZhEl.innerHTML = `<b>摘要（中文）</b>：${escapeHtml(data.abstract_zh)}<br><br>`;
+  if (data.abstract_zh) {
+    c.absZhEl.innerHTML = `<b>摘要（中文）</b>：${escapeHtml(data.abstract_zh)}<br><br>`;
+    if (c.absSumEl) c.absSumEl.textContent = "原始摘要 / 中文翻译";
+  }
 }
 
 async function retrySummary(short_id) {
@@ -396,7 +457,7 @@ function handle(ev) {
       $("resultsHead").classList.remove("hidden");
       const ps = payload.papers || [];
       ps.forEach(makeCard);
-      applySort();
+      applyGrouping();
       const willSum = ps.filter(p => p.will_summarize).length;
       log(`命中 ${ps.length} 篇（${willSum} 篇将生成 AI 总结，其余保留，可按需生成）`);
       break;
@@ -409,7 +470,7 @@ function handle(ev) {
     }
     case "paper_summarized":
       fillCard(payload.short_id, payload);
-      if ($("sortMode") && $("sortMode").value === "summarized") applySort();
+      if ($("sortMode") && $("sortMode").value === "summarized") applyGrouping();
       break;
     case "dry_run_candidates": {
       $("resultsHead").classList.remove("hidden");
@@ -528,6 +589,7 @@ async function loadConfig() {
     if (c.error) { $("cfg").innerHTML = `配置错误：${escapeHtml(c.error)}`; return; }
     boundaryHour = c.day_boundary_hour ?? 8;
     tzOffset = c.tz_offset_hours ?? 8;
+    TAGS = c.tags || [];
     // 日期/天数控件默认值
     if (c.today && !$("runDate").value) { $("runDate").value = c.today; currentDate = c.today; }
     if (c.days_back && !$("runDaysBack").value) $("runDaysBack").value = c.days_back;
@@ -577,7 +639,7 @@ async function showHistory(date) {
     makeCard({ ...p, date });
     fillCard(p.short_id, p);
   });
-  applySort();
+  applyGrouping();
   log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
   if (running) log("提示：后台仍在运行，点右上角「查看进度」可返回实时进度。");
 }
@@ -603,7 +665,7 @@ $("stopBtn").addEventListener("click", onStopClick);
 $("history").addEventListener("change", (e) => showHistory(e.target.value));
 $("runDate").addEventListener("change", updateWinHint);
 $("runDaysBack").addEventListener("input", updateWinHint);
-$("sortMode").addEventListener("change", applySort);
+$("sortMode").addEventListener("change", applyGrouping);
 initStages();
 loadConfig();
 loadHistory();
