@@ -5,6 +5,7 @@
     python main.py -c my.yaml       # 指定配置文件
     python main.py --dry-run        # 只爬取并打印候选论文，不调用 LLM、不推送（不耗 token）
     python main.py --refresh        # 重新生成：忽略历史去重，重新处理今天的论文（默认否）
+    python main.py --email          # 本次运行发送邮件（默认否；需先配好 push.email 的 SMTP 参数）
     python main.py --list-models    # 列出可调用模型(校验 api-key / 连通性)
 
 启动本地实时仪表盘网页见 serve.py：python serve.py
@@ -41,6 +42,8 @@ def main() -> int:
     parser.add_argument("--refresh", "--no-dedup", dest="refresh", action="store_true",
                         help="重新生成：忽略历史去重，重新处理（默认否）")
     parser.add_argument("--dry-run", action="store_true", help="只爬取并打印候选，不调用 LLM、不推送")
+    parser.add_argument("--email", action="store_true",
+                        help="本次运行发送邮件（默认否；需在 config.yaml 填好 push.email 的 SMTP 参数）")
     parser.add_argument("--date", default="", help="参考日期 YYYY-MM-DD（默认今天，按本地时区）")
     parser.add_argument("--days-back", type=int, default=0, help="窗口天数（覆盖配置 arxiv.days_back）")
     parser.add_argument("--list-models", action="store_true", help="列出可调用模型并退出")
@@ -52,7 +55,7 @@ def main() -> int:
         if args.days_back and args.days_back > 0:
             cfg.arxiv.days_back = args.days_back
         run_pipeline(cfg, make_print_emitter(), dedup=not args.refresh,
-                     dry_run=args.dry_run, ref_date=args.date or None)
+                     dry_run=args.dry_run, email=args.email, ref_date=args.date or None)
         return 0
     except (FileNotFoundError, ValueError) as e:
         print(f"配置错误: {e}", file=sys.stderr)

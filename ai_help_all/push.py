@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import re
 import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape as _escape
 from pathlib import Path
 
 from .arxiv_crawler import Paper
@@ -84,62 +86,169 @@ def write_json(papers: list[Paper], out_dir: str | Path, date_str: str) -> Path:
     return path
 
 
-def _markdown_to_simple_html(papers: list[Paper], date_str: str, max_authors: int = 6) -> str:
-    parts = [
-        f"<h1>arxiv 每日论文日报 · {date_str}</h1>",
-        f"<p>共筛选出 <b>{len(papers)}</b> 篇相关论文。</p>",
-    ]
-    for i, p in enumerate(papers, 1):
-        summary_html = (p.summary or "").replace("\n", "<br>")
-        aff_html = (
-            f"<p><b>发表机构</b>：{'；'.join(p.affiliations)}</p>" if p.affiliations else ""
-        )
-        abs_zh = f"<p><b>摘要(中文)</b>：{p.abstract_zh}</p>" if p.abstract_zh else ""
-        parts.append(
-            f"<h2>{i}. {p.title}</h2>"
-            f"<p><b>相关性</b>：{p.score}/10　{p.reason}</p>"
-            f"<p><b>作者</b>：{', '.join(p.authors[:max_authors])}</p>"
-            f"{aff_html}"
-            f"<p><b>链接</b>：<a href='{p.entry_url}'>摘要页</a> | "
-            f"<a href='{p.pdf_url}'>PDF</a></p>"
-            f"<p>{summary_html}</p>"
-            f"<details><summary>原始摘要 / 中文翻译</summary>{abs_zh}"
-            f"<p><b>Abstract</b>: {p.abstract}</p></details><hr>"
-        )
-    return "<html><body>" + "".join(parts) + "</body></html>"
+# 与网页仪表盘一致的配色（index.html 的 CSS 变量；邮件不支持变量，这里取字面值）
+_C = {
+    "bg": "#f6f7f9", "panel": "#ffffff", "panel2": "#eef1f5", "border": "#e2e6ec",
+    "fg": "#1c2128", "muted": "#667085", "accent": "#2f6feb", "accent2": "#7c5cff",
+    "green": "#1a7f37", "yellow": "#b8860b", "lo": "#5a6472",
+}
+_FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',"
+         "'Microsoft YaHei',sans-serif")
 
 
-def send_email(cfg: Config, papers: list[Paper], date_str: str) -> None:
+def _render_summary_html(text: str) -> str:
+    """与网页 renderSummary 一致：转义 -> **加粗** -> 换行 <br>。"""
+    h = _escape(text or "")
+    h = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", h)
+    return h.replace("\n", "<br>")
+
+
+def _score_badge_bg(score: int) -> str:
+    """分数徽章底色，阈值同网页 badgeClass（>=8 绿 / >=6 黄 / 其余灰）。"""
+    if score >= 8:
+        return _C["green"]
+    if score >= 6:
+        return _C["yellow"]
+    return _C["lo"]
+
+
+def _email_card(i: int, p: Paper, max_authors: int) -> str:
+    """单篇论文卡片（内联样式，仿网页 .card）。"""
+    title = _escape(p.title)
+    tag = _escape(p.tag or "其他")
+    authors = ", ".join(_escape(a) for a in p.authors[:max_authors])
+    if len(p.authors) > max_authors:
+        authors += " 等"
+    cats = _escape(", ".join(p.categories))
+
+    # 总结区：成功=正常色，失败/未生成=灰色提示
+    s = (p.summary or "").strip()
+    if s and not s.startswith("(总结"):
+        summary_inner = _render_summary_html(s)
+        summary_color = _C["fg"]
+    else:
+        summary_inner = _escape(s) if s else "未生成 AI 总结"
+        summary_color = _C["muted"]
+
+    aff_row = ""
+    if p.affiliations:
+        aff_row = (
+            f'<div style="color:{_C["muted"]};font-size:12.5px;margin:4px 0;">'
+            f'发表机构：{_escape("；".join(p.affiliations))}</div>'
+        )
+
+    return f"""
+    <div style="background:{_C['panel']};border:1px solid {_C['border']};border-radius:12px;
+                padding:16px 18px;margin-bottom:14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="border-collapse:collapse;">
+        <tr>
+          <td valign="top" style="width:34px;padding-right:10px;">
+            <span style="display:inline-block;background:{_score_badge_bg(p.score)};color:#fff;
+                         font-weight:700;border-radius:6px;padding:2px 8px;font-size:13px;">{p.score}</span>
+          </td>
+          <td valign="top">
+            <span style="font-size:15.5px;font-weight:650;color:{_C['fg']};line-height:1.4;">{i}. {title}</span>
+          </td>
+          <td valign="top" align="right" style="padding-left:10px;white-space:nowrap;">
+            <span style="display:inline-block;background:{_C['panel2']};border:1px solid {_C['border']};
+                         color:{_C['accent']};border-radius:999px;padding:2px 10px;font-size:12px;">{tag}</span>
+          </td>
+        </tr>
+      </table>
+      <div style="color:{_C['accent']};font-size:13px;margin:8px 0 6px;">{_escape(p.reason or "")}</div>
+      <div style="color:{_C['muted']};font-size:12.5px;margin:4px 0;">{authors}</div>
+      {aff_row}
+      <div style="color:{_C['muted']};font-size:12.5px;margin:4px 0;">{cats} ·
+        <a href="{_escape(p.entry_url)}" style="color:{_C['accent']};text-decoration:none;">摘要页</a> ·
+        <a href="{_escape(p.pdf_url)}" style="color:{_C['accent']};text-decoration:none;">PDF</a>
+      </div>
+      <div style="background:{_C['panel2']};border-radius:8px;padding:12px 14px;font-size:13.5px;
+                  color:{summary_color};margin-top:10px;line-height:1.7;">{summary_inner}</div>
+    </div>"""
+
+
+def _build_email_html(papers: list[Paper], date_str: str, max_authors: int = 6) -> str:
+    """生成与网页仪表盘同风格的 HTML 邮件（全内联样式，兼容主流邮件客户端）。"""
+    cards = "".join(_email_card(i, p, max_authors) for i, p in enumerate(papers, 1))
+    header = f"""
+    <div style="background:{_C['accent']};
+                background:linear-gradient(135deg,{_C['accent']},{_C['accent2']});
+                border-radius:14px;padding:20px 24px;margin-bottom:18px;color:#fff;">
+      <div style="font-size:12.5px;font-weight:700;letter-spacing:.5px;opacity:.92;">Aha · AI helps all</div>
+      <div style="font-size:21px;font-weight:800;margin-top:4px;">arXiv 论文日报 · {date_str}</div>
+      <div style="font-size:13px;opacity:.92;margin-top:6px;">
+        共筛选出 {len(papers)} 篇相关论文（按相关性从高到低）</div>
+    </div>"""
+    footer = (
+        f'<div style="color:{_C["muted"]};font-size:12px;text-align:center;'
+        f'margin-top:18px;padding-top:14px;border-top:1px solid {_C["border"]};">'
+        f'本邮件由 ai-help-all 自动生成 · {date_str}</div>'
+    )
+    body = f"""
+    <div style="margin:0;padding:20px;background:{_C['bg']};">
+      <div style="max-width:720px;margin:0 auto;font-family:{_FONT};
+                  color:{_C['fg']};font-size:14px;line-height:1.6;">
+        {header}{cards}{footer}
+      </div>
+    </div>"""
+    return f"<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;'>{body}</body></html>"
+
+
+class EmailNotConfigured(Exception):
+    """SMTP 必填项缺失（host/username/password/to_addrs）。"""
+
+
+def deliver_digest_email(cfg: Config, papers: list[Paper], date_str: str) -> list[str]:
+    """构建并发送日报邮件，返回收件人列表。
+
+    与 send_email 不同：这里**会抛异常**——配置不完整抛 EmailNotConfigured，
+    SMTP 登录/投递失败抛原异常。供网页「发送邮件」按钮调用以获得明确反馈。
+    """
     ec = cfg.push.email
-    if not ec.enabled:
-        return
     if not (ec.smtp_host and ec.username and ec.password and ec.to_addrs):
-        print("  [推送] 邮件配置不完整，跳过邮件发送。")
-        return
+        raise EmailNotConfigured(
+            "邮件配置不完整（需 smtp_host/username/password/to_addrs，授权码可放 .env）"
+        )
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"[arxiv日报] {date_str} 共 {len(papers)} 篇相关论文"
     msg["From"] = ec.from_addr or ec.username
     msg["To"] = ", ".join(ec.to_addrs)
-    html = _markdown_to_simple_html(papers, date_str, cfg.max_authors_shown)
+    html = _build_email_html(papers, date_str, cfg.max_authors_shown)
     msg.attach(MIMEText(html, "html", "utf-8"))
 
+    if ec.use_ssl:
+        server = smtplib.SMTP_SSL(ec.smtp_host, ec.smtp_port, timeout=30)
+    else:
+        server = smtplib.SMTP(ec.smtp_host, ec.smtp_port, timeout=30)
+        server.starttls()
+    with server:
+        server.login(ec.username, ec.password)
+        server.sendmail(msg["From"], ec.to_addrs, msg.as_string())
+    return list(ec.to_addrs)
+
+
+def send_email(cfg: Config, papers: list[Paper], date_str: str, send: bool = False) -> None:
+    """流水线用：是否发送由 send 决定（默认不发）；失败只打印、不中断运行。"""
+    if not send:
+        return
     try:
-        if ec.use_ssl:
-            server = smtplib.SMTP_SSL(ec.smtp_host, ec.smtp_port, timeout=30)
-        else:
-            server = smtplib.SMTP(ec.smtp_host, ec.smtp_port, timeout=30)
-            server.starttls()
-        with server:
-            server.login(ec.username, ec.password)
-            server.sendmail(msg["From"], ec.to_addrs, msg.as_string())
-        print(f"  [推送] 邮件已发送至 {', '.join(ec.to_addrs)}")
-    except Exception as e:  # noqa: BLE001
+        to = deliver_digest_email(cfg, papers, date_str)
+        print(f"  [推送] 邮件已发送至 {', '.join(to)}")
+    except EmailNotConfigured as e:
+        print(f"  [推送] {e}，跳过邮件发送。")
+    except Exception as e:  # noqa: BLE001 - 邮件失败不影响流水线
         print(f"  [推送] 邮件发送失败: {e}")
 
 
-def push_all(cfg: Config, papers: list[Paper], date_str: str | None = None) -> dict:
-    """生成日报并推送，返回产物路径信息。date_str 为日报日期标签。"""
+def push_all(cfg: Config, papers: list[Paper], date_str: str | None = None,
+             *, email: bool = False) -> dict:
+    """生成日报并推送，返回产物路径信息。date_str 为日报日期标签。
+
+    email: 运行时邮件开关（默认 False，不发邮件）；为 True 才尝试按 config 的
+    SMTP 参数发送当天日报。
+    """
     if not date_str:
         date_str = datetime.now().strftime("%Y-%m-%d")
     result: dict = {"date": date_str, "markdown": None, "json": None}
@@ -153,5 +262,5 @@ def push_all(cfg: Config, papers: list[Paper], date_str: str | None = None) -> d
         md_path = write_markdown(content, "digests", date_str)
         result["markdown"] = str(md_path)
 
-    send_email(cfg, papers, date_str)
+    send_email(cfg, papers, date_str, send=email)
     return result

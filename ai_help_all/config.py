@@ -63,7 +63,8 @@ class LLMConfig:
 
 @dataclass
 class EmailConfig:
-    enabled: bool = False
+    # 注意：是否发邮件已改为“运行时”控制（CLI --email / 网页勾选「发邮件」），默认关闭，
+    # 不再放在 config 里。这里只保留 SMTP 连接参数。
     smtp_host: str = ""
     smtp_port: int = 465
     use_ssl: bool = True
@@ -120,7 +121,9 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         )
 
     push_raw = raw.get("push") or {}
-    email_raw = push_raw.get("email") or {}
+    email_raw = dict(push_raw.get("email") or {})
+    # 兼容旧配置：enabled 已改为运行时控制，若残留则忽略
+    email_raw.pop("enabled", None)
     email = EmailConfig(**email_raw)
     email.password = os.getenv("AI_HELP_ALL_SMTP_PASSWORD") or email.password
     push = PushConfig(markdown=push_raw.get("markdown", True), email=email)

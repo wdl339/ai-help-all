@@ -22,6 +22,7 @@ from .arxiv_crawler import Paper
 from .config import load_config
 from .llm_client import LLMClient
 from .pipeline import run_pipeline
+from .push import EmailNotConfigured, deliver_digest_email
 from .summarizer import summarize_paper
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -32,7 +33,7 @@ _MP = mp.get_context("spawn")
 
 
 def _pipeline_process(q, config_path: str, refresh: bool, dry_run: bool,
-                      ref_date: str | None, days_back: int | None) -> None:
+                      ref_date: str | None, days_back: int | None, email: bool) -> None:
     """在独立子进程里运行流水线；事件通过跨进程队列 q 回传给父进程。
 
     放在模块顶层以便 spawn 方式 pickle。被父进程 terminate() 时整个进程
@@ -45,7 +46,8 @@ def _pipeline_process(q, config_path: str, refresh: bool, dry_run: bool,
         cfg = load_config(config_path)
         if days_back and days_back > 0:
             cfg.arxiv.days_back = days_back
-        run_pipeline(cfg, emit, dedup=not refresh, dry_run=dry_run, ref_date=ref_date or None)
+        run_pipeline(cfg, emit, dedup=not refresh, dry_run=dry_run, email=email,
+                     ref_date=ref_date or None)
     except Exception as e:  # noqa: BLE001
         try:
             q.put({"type": "error", "payload": {"message": f"运行失败: {e}"}})
@@ -80,7 +82,8 @@ class RunManager:
                 q.put(ev)
 
     def start(self, config_path: str, *, refresh: bool, dry_run: bool,
-              ref_date: str | None = None, days_back: int | None = None) -> bool:
+              ref_date: str | None = None, days_back: int | None = None,
+              email: bool = False) -> bool:
         """启动一次运行（独立子进程）；若已有运行返回 False。"""
         with self.lock:
             if self.running:
@@ -90,12 +93,12 @@ class RunManager:
             self.events = []
             self._seq = 0
             self.params = {"date": ref_date or "", "days_back": days_back or 0,
-                           "refresh": refresh, "dry_run": dry_run}
+                           "refresh": refresh, "dry_run": dry_run, "email": email}
 
         mpq: mp.Queue = _MP.Queue()
         proc = _MP.Process(
             target=_pipeline_process,
-            args=(mpq, config_path, refresh, dry_run, ref_date, days_back),
+            args=(mpq, config_path, refresh, dry_run, ref_date, days_back, email),
             daemon=True,
         )
         proc.start()
@@ -193,6 +196,9 @@ def _paper_from_dict(d: dict) -> Paper:
         score=d.get("score", 0),
         reason=d.get("reason", ""),
         tag=d.get("tag", ""),
+        summary=d.get("summary", ""),
+        abstract_zh=d.get("abstract_zh", ""),
+        affiliations=d.get("affiliations", []),
     )
 
 
@@ -247,6 +253,34 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
             return JSONResponse({"error": "not found"}, status_code=404)
         return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
 
+    @app.get("/api/email_digest")
+    def email_digest(date: str = "") -> JSONResponse:
+        """把某一天已生成的日报，按邮件格式发送（用于历史日报的「发送邮件」按钮）。"""
+        safe = "".join(c for c in (date or "") if c.isdigit() or c == "-")
+        if not safe:
+            return JSONResponse({"error": "缺少日期参数"}, status_code=400)
+        path = _DIGESTS_DIR / f"digest-{safe}.json"
+        if not path.exists():
+            return JSONResponse({"error": "该日期日报不存在"}, status_code=404)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            return JSONResponse({"error": f"读取日报失败: {e}"}, status_code=500)
+
+        papers = [_paper_from_dict(p) for p in data.get("papers", [])]
+        if not papers:
+            return JSONResponse({"error": "该日报没有论文，无需发送"}, status_code=400)
+
+        try:
+            cfg = load_config(config_path)
+            to = deliver_digest_email(cfg, papers, safe)
+        except EmailNotConfigured as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse({"error": f"邮件发送失败: {e}"}, status_code=500)
+
+        return JSONResponse({"ok": True, "date": safe, "count": len(papers), "to": to})
+
     @app.get("/api/status")
     def status() -> JSONResponse:
         return JSONResponse(manager.status())
@@ -297,10 +331,10 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
 
     @app.get("/api/start")
     def start(dry_run: bool = False, refresh: bool = False,
-              date: str = "", days_back: int = 0) -> JSONResponse:
+              date: str = "", days_back: int = 0, email: bool = False) -> JSONResponse:
         started = manager.start(
             config_path, refresh=refresh, dry_run=dry_run,
-            ref_date=date or None, days_back=days_back or None,
+            ref_date=date or None, days_back=days_back or None, email=email,
         )
         return JSONResponse({"started": started, **manager.status()})
 

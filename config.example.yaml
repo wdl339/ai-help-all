@@ -107,15 +107,17 @@ llm:
 push:
   # 始终会在 ./digests/ 下生成 markdown 日报
   markdown: true
-  # 邮件推送（可选）。不需要就保持 enabled: false
+  # 邮件推送（可选）。这里只填 SMTP 连接参数；“是否发邮件”改由运行时控制：
+  #   CLI：python main.py --email      网页：顶部工具栏勾选「发邮件」  （默认都不发）
+  # 常见 SMTP：QQ=smtp.qq.com / 163=smtp.163.com / Gmail=smtp.gmail.com
+  # 端口与加密配套：SSL 用 465 且 use_ssl: true；STARTTLS 用 587 且 use_ssl: false
   email:
-    enabled: false
-    smtp_host: smtp.example.com
-    smtp_port: 465
-    use_ssl: true
-    username: you@example.com
-    # 推荐用环境变量 AI_HELP_ALL_SMTP_PASSWORD
+    smtp_host: smtp.example.com   # 邮箱服务商的 SMTP 服务器
+    smtp_port: 465                # SSL=465 / STARTTLS=587
+    use_ssl: true                 # 465→true；587→false
+    username: you@example.com     # SMTP 登录账号（通常是完整邮箱）
+    # 这里填“授权码/应用专用密码”（不是邮箱登录密码！）；推荐留空，改用环境变量 AI_HELP_ALL_SMTP_PASSWORD
     password: ""
-    from_addr: you@example.com
-    to_addrs:
+    from_addr: you@example.com    # 发件人；留空则自动用 username
+    to_addrs:                     # 收件人，可填多个
       - you@example.com

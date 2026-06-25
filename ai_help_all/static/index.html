@@ -35,6 +35,7 @@
   header .tagline { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
   .grow { flex: 1; }
   .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .toolbar { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
   label.chk { color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
   button {
     background: var(--accent); color: #fff; border: none; padding: 8px 18px;
@@ -110,18 +111,21 @@
       <h1><span class="em">AI helps all</span> 论文日报</h1>
     </div>
   </div>
-  <div class="grow"></div>
-  <div class="controls">
-    <select id="history" title="查看历史日报"><option value="">历史日报…</option></select>
-    <label class="chk" title="参考日期（默认今天）；窗口截止于该日期的分界点">日期 <input type="date" id="runDate" /></label>
-    <label class="chk" title="从选定日期往前 N 天（窗口 = 选定日期分界点 往前 N 天）">天数 <input type="number" id="runDaysBack" min="1" max="14" /></label>
-    <label class="chk" title="忽略历史去重，重新处理"><input type="checkbox" id="refresh" /> 重新生成</label>
-    <label class="chk"><input type="checkbox" id="dryrun" /> 仅爬取</label>
-    <button id="runBtn">▶ 运行</button>
-    <button id="stopBtn" class="ghost" style="display:none">■ 停止</button>
-  </div>
 </header>
 <main>
+  <div class="toolbar">
+    <div class="controls">
+      <select id="history" title="查看历史日报"><option value="">历史日报…</option></select>
+      <label class="chk" title="参考日期（默认今天）；窗口截止于该日期的分界点">日期 <input type="date" id="runDate" /></label>
+      <label class="chk" title="从选定日期往前 N 天（窗口 = 选定日期分界点 往前 N 天）">天数 <input type="number" id="runDaysBack" min="1" max="14" /></label>
+      <label class="chk"><input type="checkbox" id="dryrun" /> 仅爬取</label>
+      <label class="chk" title="忽略历史去重，重新处理"><input type="checkbox" id="refresh" /> 重新生成</label>
+      <label class="chk" title="本次运行结束后发送邮件（需先在 config.yaml 配好 push.email 的 SMTP 参数）"><input type="checkbox" id="sendEmail" /> 发送邮件</label>
+      <div class="grow"></div>
+      <button id="runBtn">▶ 运行</button>
+      <button id="stopBtn" class="ghost" style="display:none">■ 停止</button>
+    </div>
+  </div>
   <div class="cfg" id="cfg">加载配置中…</div>
   <div class="cfg" id="winHint" style="margin-top:-8px"></div>
 
@@ -129,7 +133,7 @@
 
   <div class="panel">
     <h2>运行日志</h2>
-    <div class="feed" id="log"><div class="row">点击右上角「运行」开始。</div></div>
+    <div class="feed" id="log"><div class="row">点击上方「运行」开始。</div></div>
   </div>
 
   <div class="panel hidden" id="scorePanel">
@@ -151,6 +155,7 @@
       <option value="tag">按标签</option>
       <option value="summarized">按是否总结</option>
     </select>
+    <button id="emailDigestBtn" class="ghost" title="把当前查看的这天日报按邮件格式发送（需先配好 push.email）" style="margin-left:auto;display:none">✉ 发送邮件</button>
   </div>
   <div id="results"></div>
 </main>
@@ -413,6 +418,7 @@ function resetUI() {
   $("scorePanel").classList.add("hidden");
   $("sumPanel").classList.add("hidden");
   $("resultsHead").classList.add("hidden");
+  $("emailDigestBtn").style.display = "none";
   initStages();
 }
 
@@ -574,10 +580,11 @@ async function onRunClick() {
   if (!running) {
     running = true; updateBtn();
     const dry = $("dryrun").checked, refresh = $("refresh").checked;
+    const email = $("sendEmail").checked;
     const date = $("runDate").value || "";
     const daysBack = parseInt($("runDaysBack").value) || 0;
     if (date) currentDate = date;   // 单篇「生成总结」会用这个日期定位日报
-    const qs = `dry_run=${dry}&refresh=${refresh}&date=${encodeURIComponent(date)}&days_back=${daysBack}`;
+    const qs = `dry_run=${dry}&refresh=${refresh}&email=${email}&date=${encodeURIComponent(date)}&days_back=${daysBack}`;
     try { await fetch(`/api/start?${qs}`); } catch {}
   }
   attachStream();   // 无论是否已在运行，都接入进度流（回放 + 实时）
@@ -634,6 +641,7 @@ async function showHistory(date) {
   const d = await (await fetch("/api/digest/" + date)).json();
   if (d.error) { log("加载失败: " + d.error, true); return; }
   $("resultsHead").classList.remove("hidden");
+  $("emailDigestBtn").style.display = (d.papers && d.papers.length) ? "" : "none";
   newDaySection(date, 1, 1);
   (d.papers || []).forEach(p => {
     makeCard({ ...p, date });
@@ -641,7 +649,31 @@ async function showHistory(date) {
   });
   applyGrouping();
   log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
-  if (running) log("提示：后台仍在运行，点右上角「查看进度」可返回实时进度。");
+  if (running) log("提示：后台仍在运行，点上方「查看进度」可返回实时进度。");
+}
+
+// 把当前查看的这天日报按邮件格式发送
+async function emailDigest() {
+  const date = currentDate;
+  if (!date) return;
+  const btn = $("emailDigestBtn");
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "发送中…";
+  try {
+    const r = await (await fetch(`/api/email_digest?date=${encodeURIComponent(date)}`)).json();
+    if (r.error) {
+      log("邮件发送失败：" + r.error, true);
+      btn.textContent = "✉ 发送失败";
+    } else {
+      log(`✅ 已发送 ${r.date} 日报邮件至 ${(r.to || []).join(", ")}（${r.count} 篇）`);
+      btn.textContent = "✉ 已发送";
+    }
+  } catch (e) {
+    log("邮件发送请求失败，请稍后重试", true);
+    btn.textContent = "✉ 发送失败";
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
 }
 
 // 页面加载时若后台正在运行，自动接回进度，并回填正在运行的日期/天数
@@ -653,6 +685,7 @@ async function initStatus() {
       const pr = s.params || {};
       if (pr.date) { $("runDate").value = pr.date; currentDate = pr.date; }
       if (pr.days_back) $("runDaysBack").value = pr.days_back;
+      if (pr.email) $("sendEmail").checked = true;
       updateWinHint();
       attachStream();
     }
@@ -663,6 +696,7 @@ async function initStatus() {
 $("runBtn").addEventListener("click", onRunClick);
 $("stopBtn").addEventListener("click", onStopClick);
 $("history").addEventListener("change", (e) => showHistory(e.target.value));
+$("emailDigestBtn").addEventListener("click", emailDigest);
 $("runDate").addEventListener("change", updateWinHint);
 $("runDaysBack").addEventListener("input", updateWinHint);
 $("sortMode").addEventListener("change", applyGrouping);

@@ -30,6 +30,7 @@ def _run_one_day(
     *,
     dedup: bool,
     dry_run: bool,
+    email: bool,
     cancel: Cancel,
 ) -> tuple[list[Paper], LLMClient | None]:
     """处理单独一天（窗口 = 该天分界点往前 1 天），产出该天的日报。返回 (入选论文, llm)。"""
@@ -112,7 +113,7 @@ def _run_one_day(
 
     # 5. 推送（该天独立日报）
     emit("stage", {"name": "push", "status": "start", "date": day_label, "message": f"{day_label}：生成日报"})
-    result = push_all(cfg, kept, date_str=day_label)
+    result = push_all(cfg, kept, date_str=day_label, email=email)
     emit("stage", {"name": "push", "status": "done", "date": day_label, "message": f"已生成: {result.get('json')}"})
     emit("pushed", result)
 
@@ -127,11 +128,14 @@ def run_pipeline(
     *,
     dedup: bool = True,
     dry_run: bool = False,
+    email: bool = False,
     ref_date: str | None = None,
     cancel: Cancel | None = None,
 ) -> list[Paper]:
     """对 days_back 天逐天处理，每天产出独立日报。返回所有天入选论文的合并列表。
 
+    email: 运行时邮件开关（默认 False，不发邮件）；为 True 时每天日报生成后按
+        config 的 SMTP 参数发送当天邮件。
     cancel(): 协作式取消回调，返回 True 时尽快中止（每天之间、每个任务之间会检查）。
     """
     emit = emit or noop_emit
@@ -150,7 +154,8 @@ def run_pipeline(
             stopped = True
             break
         emit("day_start", {"date": day_label, "index": idx + 1, "total": len(day_labels)})
-        kept, llm = _run_one_day(cfg, emit, llm, day_label, dedup=dedup, dry_run=dry_run, cancel=cancel)
+        kept, llm = _run_one_day(cfg, emit, llm, day_label, dedup=dedup, dry_run=dry_run,
+                                 email=email, cancel=cancel)
         all_selected += kept
         if cancel():
             stopped = True
