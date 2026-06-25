@@ -9,10 +9,12 @@
 
 开发过程中也参考了一些同类开源项目的实现思路：
 
+- [q1w2e3r4-1/arxiv-daily-researcher](https://github.com/q1w2e3r4-1/arxiv-daily-researcher)
 - [RunRiotComeOn/arXiv-Daily-Summarizer](https://github.com/RunRiotComeOn/arXiv-Daily-Summarizer)
 - [ZhuYizhou2333/ArXiv-Pusher](https://github.com/ZhuYizhou2333/ArXiv-Pusher)
 - [JoeLeelyf/customize-arxiv-daily](https://github.com/JoeLeelyf/customize-arxiv-daily)
 - [ziwenhahaha/daily-paper-reader](https://github.com/ziwenhahaha/daily-paper-reader)
+- [TideDra/zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily)
 
 > 致谢：感谢上述项目作者的开源分享，也感谢 [arXiv](https://arxiv.org/) 提供开放的论文库。
 
