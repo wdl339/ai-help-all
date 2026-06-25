@@ -28,6 +28,44 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 3 + 8
 
 
+class UsageTracker:
+    """累计真实 token 用量（来自每次响应的 usage 字段），按模型分组。线程安全。"""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.requests = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.total_tokens = 0
+        self.by_model: dict[str, dict[str, int]] = {}
+
+    def add(self, model: str, prompt: int, completion: int, total: int) -> None:
+        with self._lock:
+            self.requests += 1
+            self.prompt_tokens += prompt
+            self.completion_tokens += completion
+            self.total_tokens += total
+            m = self.by_model.setdefault(
+                model,
+                {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            )
+            m["requests"] += 1
+            m["prompt_tokens"] += prompt
+            m["completion_tokens"] += completion
+            m["total_tokens"] += total
+
+    def snapshot(self) -> dict:
+        """返回当前累计用量的快照（可 JSON 序列化）。"""
+        with self._lock:
+            return {
+                "requests": self.requests,
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
+                "total_tokens": self.total_tokens,
+                "by_model": {k: dict(v) for k, v in self.by_model.items()},
+            }
+
+
 class RateLimiter:
     """滑动窗口限速器：同时约束最近 60s 内的请求数与 token 消耗。"""
 
@@ -87,6 +125,7 @@ class LLMClient:
             max_retries=0,
         )
         self.limiter = RateLimiter(cfg.requests_per_minute, cfg.tokens_per_minute)
+        self.usage = UsageTracker()
 
     @staticmethod
     def _is_reasoner(model: str) -> bool:
@@ -124,6 +163,7 @@ class LLMClient:
             try:
                 resp = self.client.chat.completions.create(**params)
                 content = resp.choices[0].message.content or ""
+                self._track_usage(model, resp)
                 return content.strip()
             except APITimeoutError as e:
                 last_err = e
@@ -136,6 +176,16 @@ class LLMClient:
                 print(f"  [LLM] 第 {attempt + 1}/{retries} 次调用失败: {e}；{wait}s 后重试")
                 time.sleep(wait)
         raise RuntimeError(f"LLM 调用多次失败(已尝试 {retries} 次): {last_err}")
+
+    def _track_usage(self, model: str, resp) -> None:
+        """从响应的 usage 字段累计真实 token 用量（字段缺失时安全跳过）。"""
+        u = getattr(resp, "usage", None)
+        if u is None:
+            return
+        prompt = getattr(u, "prompt_tokens", 0) or 0
+        completion = getattr(u, "completion_tokens", 0) or 0
+        total = getattr(u, "total_tokens", 0) or (prompt + completion)
+        self.usage.add(model, prompt, completion, total)
 
     def list_models(self) -> list[str]:
         """列出当前 api-key 可调用的模型 id（也可用于连通性/密钥校验）。"""

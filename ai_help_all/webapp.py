@@ -24,6 +24,7 @@ from .llm_client import LLMClient
 from .pipeline import run_pipeline
 from .push import EmailNotConfigured, deliver_digest_email
 from .summarizer import summarize_paper
+from .usage import record_usage, usage_summary
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _DIGESTS_DIR = Path("digests")
@@ -232,6 +233,8 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
             "filter_model": cfg.llm.filter_model,
             "summarize_model": cfg.llm.summarize_model,
             "max_concurrency": cfg.llm.max_concurrency,
+            "summarize_fulltext": cfg.summarize_fulltext,
+            "fulltext_max_chars": cfg.fulltext_max_chars,
             "interests": cfg.interests,
         })
 
@@ -285,6 +288,11 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
     def status() -> JSONResponse:
         return JSONResponse(manager.status())
 
+    @app.get("/api/usage")
+    def usage(days: int = 7) -> JSONResponse:
+        """今日 + 最近 N 天的 token 用量汇总（来自 digests/usage.json）。"""
+        return JSONResponse(usage_summary(days))
+
     @app.get("/api/resummarize")
     def resummarize(short_id: str, date: str = "") -> JSONResponse:
         """对某一天日报里的单篇论文重新生成总结（用于失败/超时后的手动重试）。"""
@@ -309,7 +317,9 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
         try:
             cfg = load_config(config_path)
             paper = _paper_from_dict(pd)
-            summarize_paper(LLMClient(cfg.llm), cfg, paper)
+            client = LLMClient(cfg.llm)
+            summarize_paper(client, cfg, paper)
+            record_usage(client.usage.snapshot())
         except Exception as e:  # noqa: BLE001
             return JSONResponse({"error": f"重新总结失败: {e}"}, status_code=500)
 

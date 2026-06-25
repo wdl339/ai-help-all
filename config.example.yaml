@@ -66,6 +66,12 @@ affiliation_pdf_chars: 1800
 # 展示作者时最多列几位（markdown/邮件）
 max_authors_shown: 6
 
+# 总结是否基于论文全文：先下 PDF 抽文本，失败抓 arXiv HTML 版，最后回退摘要。
+# 关掉则只用摘要总结（更快、更省 token）。注意：相关性「打分」始终只用摘要，全文仅用于总结。
+summarize_fulltext: true
+# 全文喂给 LLM 前截断到多少字符（越大越完整但越耗 token；一篇论文正文常 4-6 万字符）
+fulltext_max_chars: 48000
+
 # ---- LLM 设置 ----
 # 可用模型(SJTU 交我算 API)调用名 / 上下文 / 说明：
 #   glm-5.1            GLM-5.1        128k  强；直接返回内容，适合批量打分（默认筛选模型）
@@ -98,8 +104,8 @@ llm:
   filter_abstract_chars: 1200
   # 单次请求最大输出 token（思考模型如 minimax 会先用 token 推理，需留足余量）
   filter_max_tokens: 2048
-  # 总结要同时产出 中文总结 + 摘要翻译 + 作者单位，需更大余量
-  summarize_max_tokens: 3072
+  # 总结要产出 多段深度解读 + 摘要翻译 + 作者单位（思考模型还会先消耗 token 推理），故留足余量
+  summarize_max_tokens: 8192
   # 总结输出语言
   language: 中文
 

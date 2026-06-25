@@ -12,6 +12,18 @@ def noop_emit(event_type: str, payload: dict) -> None:  # noqa: D401
     return None
 
 
+def fmt_duration(seconds: float) -> str:
+    """把秒数格式化成易读时长：如 45.3秒 / 2分30秒 / 1时05分。"""
+    s = max(0.0, float(seconds or 0))
+    if s < 60:
+        return f"{s:.1f} 秒"
+    m, sec = divmod(int(s), 60)
+    if m < 60:
+        return f"{m} 分 {sec} 秒"
+    h, m = divmod(m, 60)
+    return f"{h} 时 {m:02d} 分"
+
+
 def make_print_emitter() -> Emitter:
     """给 CLI 用：把事件格式化成中文日志行打印。"""
 
@@ -30,9 +42,20 @@ def make_print_emitter() -> Emitter:
             print(f"    · 已总结  {payload.get('title', '')[:60]}")
         elif event_type == "error":
             print(f"  [错误] {payload.get('message', '')}")
+        elif event_type == "usage":
+            by_model = payload.get("by_model") or {}
+            detail = " ".join(
+                f"{m}: {v.get('total_tokens', 0):,}" for m, v in by_model.items()
+            )
+            print(f"📊 本次用量：{payload.get('requests', 0)} 次请求，"
+                  f"{payload.get('total_tokens', 0):,} tokens"
+                  + (f"（{detail}）" if detail else ""))
         elif event_type == "done":
             days = payload.get("days")
             extra = f"（{days} 天）" if days and days > 1 else ""
-            print(f"完成 ✅ 共 {payload.get('count', 0)} 篇{extra}")
+            elapsed = payload.get("elapsed")
+            cost = f"，用时 {fmt_duration(elapsed)}" if elapsed is not None else ""
+            mark = "⏹ 已停止" if payload.get("stopped") else "完成 ✅"
+            print(f"{mark} 共 {payload.get('count', 0)} 篇{extra}{cost}")
 
     return emit

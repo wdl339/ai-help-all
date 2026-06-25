@@ -56,8 +56,8 @@ class LLMConfig:
     filter_abstract_chars: int = 1200
     # 单次请求的最大输出 token（思考模型会先消耗 token 做推理，需留足余量）
     filter_max_tokens: int = 2048
-    # 总结要同时产出 中文总结 + 摘要翻译 + 作者单位，需更大余量
-    summarize_max_tokens: int = 3072
+    # 总结要产出 多段深度解读 + 摘要翻译 + 作者单位（思考模型还会先消耗 token 推理），故留足余量
+    summarize_max_tokens: int = 8192
     language: str = "中文"
 
 
@@ -95,6 +95,11 @@ class Config:
     affiliation_pdf_chars: int = 1800
     # 总结/筛选/推送展示作者时最多列几位
     max_authors_shown: int = 6
+    # 总结是否基于论文全文：先下 PDF 抽文本，失败抓 arXiv HTML 版，最后回退摘要。关掉则只用摘要。
+    # 注意：打分(筛选)始终只用摘要，全文仅用于「总结」阶段。
+    summarize_fulltext: bool = True
+    # 全文喂给 LLM 前截断到多少字符（越大越完整但越耗 token）
+    fulltext_max_chars: int = 48000
     llm: LLMConfig = field(default_factory=LLMConfig)
     push: PushConfig = field(default_factory=PushConfig)
 
@@ -142,6 +147,8 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         fetch_affiliations=bool(raw.get("fetch_affiliations", True)),
         affiliation_pdf_chars=int(raw.get("affiliation_pdf_chars", 1800)),
         max_authors_shown=int(raw.get("max_authors_shown", 6)),
+        summarize_fulltext=bool(raw.get("summarize_fulltext", True)),
+        fulltext_max_chars=int(raw.get("fulltext_max_chars", 48000)),
         llm=llm,
         push=push,
     )

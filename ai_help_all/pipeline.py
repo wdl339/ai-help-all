@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from typing import Callable
 
@@ -14,6 +15,7 @@ from .llm_client import LLMClient
 from .push import push_all
 from .seen import filter_unseen, load_seen, save_seen
 from .summarizer import summarize_all
+from .usage import record_usage
 
 Cancel = Callable[[], bool]
 
@@ -140,6 +142,7 @@ def run_pipeline(
     """
     emit = emit or noop_emit
     cancel = cancel or _never
+    start_ts = time.monotonic()
 
     base = resolve_date(cfg.arxiv, ref_date)
     days_back = max(1, cfg.arxiv.days_back)
@@ -149,6 +152,20 @@ def run_pipeline(
     llm: LLMClient | None = None
     all_selected: list[Paper] = []
     stopped = False
+
+    def _finalize_usage() -> None:
+        """把本次运行的真实 token 用量落账并上报（dry-run / 未建连时无）。"""
+        if llm is None:
+            return
+        snap = llm.usage.snapshot()
+        if not snap.get("requests"):
+            return
+        try:
+            record_usage(snap)
+        except Exception:  # noqa: BLE001 - 统计失败不影响主流程
+            pass
+        emit("usage", snap)
+
     for idx, day_label in enumerate(day_labels):
         if cancel():
             stopped = True
@@ -162,11 +179,15 @@ def run_pipeline(
             break
 
     if stopped or cancel():
+        _finalize_usage()
         emit("log", {"message": "⏹ 已停止运行（已完成的日报已保存）。"})
-        emit("done", {"count": len(all_selected), "days": len(day_labels),
-                      "stopped": True, "papers": [p.to_dict() for p in all_selected]})
+        emit("done", {"count": len(all_selected), "days": len(day_labels), "stopped": True,
+                      "elapsed": round(time.monotonic() - start_ts, 1),
+                      "papers": [p.to_dict() for p in all_selected]})
         return all_selected
 
+    _finalize_usage()
     emit("done", {"count": len(all_selected), "days": len(day_labels),
+                  "elapsed": round(time.monotonic() - start_ts, 1),
                   "papers": [p.to_dict() for p in all_selected]})
     return all_selected

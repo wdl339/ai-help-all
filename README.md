@@ -7,9 +7,10 @@
 
 本项目几乎完全是与 **Claude Opus 4.8** 结对「vibe coding」迭代出来的：从整体架构、模块拆分，到实时仪表盘、并发限速、邮件推送等细节，大多在与模型的反复对话中设计、实现并打磨而成。
 
-开发过程中也参考、借鉴了一些同类开源项目的实现思路：
+开发过程中也参考了一些同类开源项目的实现思路：
 
 - [RunRiotComeOn/arXiv-Daily-Summarizer](https://github.com/RunRiotComeOn/arXiv-Daily-Summarizer)
+- [ZhuYizhou2333/ArXiv-Pusher](https://github.com/ZhuYizhou2333/ArXiv-Pusher)
 
 > 致谢：感谢上述项目作者的开源分享，也感谢 [arXiv](https://arxiv.org/) 提供开放的论文库。
 
@@ -105,6 +106,7 @@ python main.py --refresh
 - `max_summarize`：每天最多总结几篇。
 - `fetch_affiliations`：是否下载 PDF 首页提取作者单位（arxiv API 不提供机构信息，
   且 OpenAlex 等对当天新论文有索引延迟，故从 PDF 首页由 LLM 抽取）。关掉可省下载时间。
+- `summarize_fulltext` / `fulltext_max_chars`：总结是否基于全文、以及全文截断长度（打分始终只用摘要）。
 - `llm.filter_model / summarize_model`：可选模型见下表。
 - `llm.requests_per_minute / tokens_per_minute`：API 限速参数（默认按额度留了余量，详见「可用模型」）。
 - `push.email`：可选邮件推送，默认关闭（详细配置见下方「邮件推送」）。
@@ -133,6 +135,14 @@ API 额度：每分钟 10 次请求 / 每分钟 100000 token / 每周 10 亿 tok
 - **双限速器**：`llm_client.py` 内置滑动窗口限速器，同时约束每分钟请求数与 token；并发再高也不会超额度（超了自动等待）。
 - **省请求**：筛选把多篇论文打包进一次请求（`filter_batch_size`，默认 20 篇/次）；每个请求都带 `max_tokens`（`filter_max_tokens / summarize_max_tokens`）。
 - DeepSeek V3.2 要求请求必须含 `user` 消息（本项目均满足）。
+
+### Token 用量统计
+
+每次运行结束会统计本次**真实** token 消耗（取自 API 返回的 `usage`，按模型分组），
+并按自然日累计到 `digests/usage.json`，便于核对额度（SJTU 每周 10 亿 token）。
+
+- **CLI**：运行结束打印「本次用量：N 次请求，X tokens」。
+- **网页**：顶部显示「今日 / 近 7 天」的 token 用量；也可调用 `GET /api/usage?days=7`。
 
 ## 邮件推送
 
@@ -210,3 +220,4 @@ python main.py --email
 - `digests/digest-YYYY-MM-DD.md`：markdown 日报。
 - `digests/digest-YYYY-MM-DD.json`：结构化数据（供仪表盘 / 后续网站读取）。
 - `digests/index.json`：历史日报索引。
+- `digests/usage.json`：每日 token 用量账本（用于额度核对）。

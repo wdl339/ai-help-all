@@ -47,7 +47,8 @@
   input[type=date], input[type=number] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-size: 13px; }
   input[type=number] { width: 50px; }
   main { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
-  .cfg { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
+  .cfg { color: var(--muted); font-size: 12.5px; margin: 0; }
+  .cfgbox { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
   .cfg b { color: var(--fg); }
   .stages { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .stage {
@@ -126,8 +127,12 @@
       <button id="stopBtn" class="ghost" style="display:none">■ 停止</button>
     </div>
   </div>
-  <div class="cfg" id="cfg">加载配置中…</div>
-  <div class="cfg" id="winHint" style="margin-top:-8px"></div>
+  <div class="cfgbox">
+    <div class="cfg" id="cfgCats">加载配置中…</div>
+    <div class="cfg" id="winHint"></div>
+    <div class="cfg" id="cfgModels"></div>
+    <div class="cfg" id="usageLine"></div>
+  </div>
 
   <div class="stages" id="stages"></div>
 
@@ -255,6 +260,14 @@ let cards = {}; // short_id -> {el, summaryEl}
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function fmtDuration(s) {
+  s = Math.max(0, +s || 0);
+  if (s < 60) return s.toFixed(1) + " 秒";
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  if (m < 60) return `${m} 分 ${sec} 秒`;
+  const h = Math.floor(m / 60), mm = m % 60;
+  return `${h} 时 ${String(mm).padStart(2, "0")} 分`;
+}
 function renderSummary(text) {
   let h = escapeHtml(text);
   h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
@@ -338,8 +351,9 @@ function summaryState(p) {
 // 把总结拆成“一句话总结”（常显）与其余部分（折叠）
 function splitSummary(text) {
   const t = (text || "").trim();
-  const idx = t.indexOf("**研究问题**");
-  if (idx > 0) return { head: t.slice(0, idx).trim(), body: t.slice(idx).trim() };
+  // head = 第一条（一句话总结）；body = 从第二个 **小标题** 起的其余内容（与具体小标题名解耦，改 prompt 也不怕）
+  const m = t.match(/\n\s*\*\*/);
+  if (m && m.index > 0) return { head: t.slice(0, m.index).trim(), body: t.slice(m.index).trim() };
   return { head: t, body: "" };
 }
 
@@ -353,7 +367,7 @@ function renderSummaryArea(short_id, p) {
   if (st === "ok") {
     const { head, body } = splitSummary(p.summary);
     el.innerHTML = renderSummary(head) +
-      (body ? `<details class="sum-more"><summary>展开研究问题 / 方法 / 亮点</summary>${renderSummary(body)}</details>` : "");
+      (body ? `<details class="sum-more"><summary>展开完整解读（背景 / 洞见 / 方法 / 相关 / 展望）</summary>${renderSummary(body)}</details>` : "");
   } else if (st === "pending") {
     el.innerHTML = `<span class="spinner"></span>总结生成中…`;
   } else if (st === "failed") {
@@ -496,10 +510,18 @@ function handle(ev) {
     case "error":
       log(payload.message, true);
       break;
+    case "usage": {
+      const by = payload.by_model || {};
+      const detail = Object.keys(by).map(m => `${m}: ${(by[m].total_tokens||0).toLocaleString()}`).join("，");
+      log(`📊 本次用量：${payload.requests||0} 次请求，${(payload.total_tokens||0).toLocaleString()} tokens${detail ? "（"+detail+"）" : ""}`);
+      loadUsage();
+      break;
+    }
     case "done": {
       const ds = payload.days && payload.days > 1 ? `（${payload.days} 天，各自独立日报）` : "";
-      if (payload.stopped) log(`⏹ 已停止 共 ${payload.count} 篇${ds}`, true);
-      else log(`完成 ✅ 共 ${payload.count} 篇${ds}`);
+      const cost = payload.elapsed != null ? `，用时 ${fmtDuration(payload.elapsed)}` : "";
+      if (payload.stopped) log(`⏹ 已停止 共 ${payload.count} 篇${ds}${cost}`, true);
+      else log(`完成 ✅ 共 ${payload.count} 篇${ds}${cost}`);
       loadHistory();   // 刷新历史下拉，纳入本次新生成的日报
       finish();
       break;
@@ -593,7 +615,7 @@ async function onRunClick() {
 async function loadConfig() {
   try {
     const c = await (await fetch("/api/config")).json();
-    if (c.error) { $("cfg").innerHTML = `配置错误：${escapeHtml(c.error)}`; return; }
+    if (c.error) { $("cfgCats").innerHTML = `配置错误：${escapeHtml(c.error)}`; return; }
     boundaryHour = c.day_boundary_hour ?? 8;
     tzOffset = c.tz_offset_hours ?? 8;
     TAGS = c.tags || [];
@@ -601,9 +623,15 @@ async function loadConfig() {
     if (c.today && !$("runDate").value) { $("runDate").value = c.today; currentDate = c.today; }
     if (c.days_back && !$("runDaysBack").value) $("runDaysBack").value = c.days_back;
     const hh = String(boundaryHour).padStart(2, "0");
-    $("cfg").innerHTML = `抓取分类 <b>${c.categories.join(" / ")}</b> · 分数阈值 <b>${c.relevance_threshold}</b> · 每份日报总结上限 <b>${c.max_summarize}</b> 篇 · 筛选模型 <b>${escapeHtml(c.filter_model)}</b> / 总结模型 <b>${escapeHtml(c.summarize_model)}</b> · 并发 <b>${c.max_concurrency}</b>`;
+    const sumBasis = c.summarize_fulltext ? `全文（前 ${(c.fulltext_max_chars||0).toLocaleString()} 字）` : "摘要";
+    // 第一行：抓取分类；紧接着 winHint(抓取窗口)；再是筛选/总结模型两行
+    $("cfgCats").innerHTML = `抓取分类 <b>${c.categories.join(" / ")}</b>`;
+    $("cfgModels").innerHTML = [
+      `筛选模型 <b>${escapeHtml(c.filter_model)}</b> · 分数阈值 <b>${c.relevance_threshold}</b>`,
+      `总结模型 <b>${escapeHtml(c.summarize_model)}</b> · 每份日报总结上限 <b>${c.max_summarize}</b> 篇 · 总结依据 <b>${sumBasis}</b>`,
+    ].join("<br>");
     updateWinHint();
-  } catch { $("cfg").textContent = "无法加载配置。"; }
+  } catch { $("cfgCats").textContent = "无法加载配置。"; }
 }
 
 // 根据所选日期/天数实时显示抓取窗口（本地时区），消除“往前/往后”的歧义
@@ -616,7 +644,17 @@ function updateWinHint() {
   const start = new Date(end); start.setDate(start.getDate() - db);
   const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()} ${hh}:00`;
   $("winHint").innerHTML =
-    `抓取窗口：<b>${fmt(start)}</b> ~ <b>${fmt(end)}</b>（本地 UTC+${tzOffset}，即选定日期往前 ${db} 天）`;
+    `抓取窗口 <b>${fmt(start)}</b> ~ <b>${fmt(end)}</b>（本地 UTC+${tzOffset}，即选定日期往前 ${db} 天）`;
+}
+
+async function loadUsage() {
+  try {
+    const u = await (await fetch("/api/usage")).json();
+    const t = u.today || {}, r = u.recent || {};
+    const fmt = (n) => (n || 0).toLocaleString();
+    $("usageLine").innerHTML =
+      `📊 Token 用量 · 今日 <b>${fmt(t.total_tokens)}</b>（${t.requests || 0} 次请求）· 近 ${u.recent_days || 7} 天 <b>${fmt(r.total_tokens)}</b>`;
+  } catch {}
 }
 
 async function loadHistory() {
@@ -703,6 +741,7 @@ $("sortMode").addEventListener("change", applyGrouping);
 initStages();
 loadConfig();
 loadHistory();
+loadUsage();
 initStatus();
 </script>
 </body>
