@@ -23,6 +23,11 @@ class Paper:
     updated: datetime
     pdf_url: str
     entry_url: str
+    # arxiv API 直接提供的元信息（多数新论文里 journal_ref/doi 为空）
+    comment: str = ""          # 作者备注：常含会议/期刊接收信息、代码链接、页数等
+    primary_category: str = ""  # 主分类（单个，比 categories 列表更聚焦）
+    journal_ref: str = ""      # 期刊/会议引用（已正式发表才有）
+    doi: str = ""              # DOI（已正式发表才有）
     # 后续由筛选/总结阶段填充
     score: int = 0
     reason: str = ""
@@ -45,6 +50,10 @@ class Paper:
             "authors": self.authors,
             "abstract": self.abstract,
             "categories": self.categories,
+            "primary_category": self.primary_category,
+            "comment": self.comment,
+            "journal_ref": self.journal_ref,
+            "doi": self.doi,
             "published": self.published.isoformat() if self.published else None,
             "updated": self.updated.isoformat() if self.updated else None,
             "pdf_url": self.pdf_url,
@@ -58,6 +67,25 @@ class Paper:
         }
 
 
+def _clean(text: str | None) -> str:
+    """把可能含换行/多余空白的字段压成单行（comment/journal_ref 等）。"""
+    return " ".join((text or "").split())
+
+
+def _api_affiliations(result: arxiv.Result) -> list[str]:
+    """收集 arxiv API 自带的作者单位（<arxiv:affiliation>，去重保序）。
+
+    多数新论文作者未填该字段，此时返回空列表，总结阶段再回退到从 PDF 首页抽取。
+    """
+    affs: list[str] = []
+    for a in result.authors:
+        for raw in getattr(a, "affiliation", None) or []:
+            name = _clean(raw)
+            if name and name not in affs:
+                affs.append(name)
+    return affs
+
+
 def _to_paper(result: arxiv.Result) -> Paper:
     return Paper(
         arxiv_id=result.get_short_id(),
@@ -65,10 +93,15 @@ def _to_paper(result: arxiv.Result) -> Paper:
         authors=[a.name for a in result.authors],
         abstract=result.summary.strip().replace("\n", " "),
         categories=list(result.categories),
+        primary_category=result.primary_category or "",
+        comment=_clean(result.comment),
+        journal_ref=_clean(result.journal_ref),
+        doi=_clean(result.doi),
         published=result.published,
         updated=result.updated,
         pdf_url=result.pdf_url,
         entry_url=result.entry_id,
+        affiliations=_api_affiliations(result),
     )
 
 

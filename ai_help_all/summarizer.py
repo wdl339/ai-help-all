@@ -25,8 +25,8 @@ from .llm_client import LLMClient
 _MIN_TEXT_CHARS = 800
 _HTTP_HEADERS = {"User-Agent": "ai-help-all/0.1 (arxiv daily digest)"}
 
-_SUM_SYS = """你是一个资深科研助理，目标是把论文讲到「有 CS 和 AI 基础但非本子领域的人也能读懂」。
-请基于给定论文信息（通常含全文，可能已截断），用{lang}输出三部分内容，并严格使用下面的分节标记（不要加多余前后缀）。
+_SUM_SYS_BASE = """你是一个资深科研助理，目标是把论文讲到「有 CS 和 AI 基础但非本子领域的人也能读懂」。
+请基于给定论文信息（通常含全文，可能已截断），用{lang}输出以下内容，并严格使用下面的分节标记（不要加多余前后缀）。
 
 写作要求：
 - 语言通俗清晰，不要泛泛而谈、不要堆砌术语；
@@ -42,7 +42,10 @@ _SUM_SYS = """你是一个资深科研助理，目标是把论文讲到「有 CS
 **可进一步探索的点**：<本文的局限、尚未解决的问题，以及值得后续探索的方向>
 
 [摘要翻译]
-<把英文摘要完整、忠实地翻译成{lang}，不要遗漏>
+<把英文摘要完整、忠实地翻译成{lang}，不要遗漏>"""
+
+# 仅当 arxiv API 未直接给出作者单位时，才追加这一节请 LLM 从首页文本抽取
+_SUM_SYS_AFF = """
 
 [作者单位]
 <从“论文首页文本”中提取作者所属的机构/单位，每行一个，形如“- 单位名”；若首页文本缺失或无法识别，则只输出一行“- 未知”>"""
@@ -182,25 +185,37 @@ def summarize_paper(llm: LLMClient, cfg: Config, paper: Paper) -> None:
     总结依据：cfg.summarize_fulltext 为真时优先用全文（PDF→HTML→回退摘要）；
     全文已含首页，作者单位即从其开头抽取，无需再单独下载。关闭全文时退化为
     「仅摘要总结 + 单独下首页抽单位」的旧行为。
+
+    作者单位优先用 arxiv API 直接给出的（爬取阶段已预填到 paper.affiliations）；
+    仅当 API 没给（绝大多数情况）才追加「作者单位」一节、并下首页文本请 LLM 抽取，
+    省去无谓的首页下载与输出 token。
     """
+    # API 已带作者单位时无需再抽；否则按需从首页文本抽取
+    need_aff = cfg.fetch_affiliations and not paper.affiliations
+
     body, first_page = "", ""
     if cfg.summarize_fulltext:
         body, first_page, _ = _fetch_full_text(paper, cfg.fulltext_max_chars)
-    if cfg.fetch_affiliations and not first_page:
+    if need_aff and not first_page:
         # 未取到正文（或关闭全文）时，单独取首页用于抽作者单位
         first_page = _fetch_first_page_text(paper.pdf_url, cfg.affiliation_pdf_chars)
 
-    sys = _SUM_SYS.format(lang=cfg.llm.language)
+    sys = _SUM_SYS_BASE.format(lang=cfg.llm.language)
+    if need_aff:
+        sys += _SUM_SYS_AFF
     parts = [
         f"标题: {paper.title}",
         f"分类: {', '.join(paper.categories)}",
-        f"英文摘要: {paper.abstract}",
     ]
+    if paper.comment:
+        # 作者备注常含会议接收/代码链接等，有助于总结时把握定位
+        parts.append(f"作者备注: {paper.comment}")
+    parts.append(f"英文摘要: {paper.abstract}")
     if body:
         parts.append(f"\n论文正文(用于总结，可能含解析噪声/已截断):\n{body}")
     else:
         parts.append("\n（未取到正文，请仅依据上面的英文摘要进行总结）")
-    if cfg.fetch_affiliations:
+    if need_aff:
         parts.append(f"\n论文首页文本(用于提取作者单位，可能含噪声):\n{first_page or '(无)'}")
     user = "\n".join(parts)
 
@@ -217,7 +232,8 @@ def summarize_paper(llm: LLMClient, cfg: Config, paper: Paper) -> None:
     # 解析失败则把整段作为总结，至少不丢内容
     paper.summary = sections.get("总结", "").strip() or out.strip()
     paper.abstract_zh = sections.get("摘要翻译", "").strip()
-    paper.affiliations = _parse_affiliations(sections.get("作者单位", ""))
+    if need_aff:
+        paper.affiliations = _parse_affiliations(sections.get("作者单位", ""))
 
 
 def summarize_all(

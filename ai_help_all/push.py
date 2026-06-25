@@ -14,13 +14,52 @@ from .arxiv_crawler import Paper
 from .config import Config
 
 
-def build_markdown(papers: list[Paper], date_str: str, max_authors: int = 6) -> str:
+def _doi_url(doi: str) -> str:
+    """把 DOI 字段规整成可点击 URL（已是 http(s) 则原样返回）。"""
+    d = (doi or "").strip()
+    if d.startswith("http://") or d.startswith("https://"):
+        return d
+    return f"https://doi.org/{d}"
+
+
+def _ordered_categories(p: Paper) -> list[str]:
+    """分类列表，主分类置顶（便于展示「这篇主要属于哪类」）。"""
+    cats = list(p.categories or [])
+    pc = (p.primary_category or "").strip()
+    if pc:
+        cats = [pc] + [c for c in cats if c != pc]
+    return cats
+
+
+def _markdown_trend(trend: dict) -> list[str]:
+    """把趋势综述渲染成 markdown 段落（置于日报顶部）。"""
+    lines = ["## 📌 今日速览", ""]
+    overview = (trend.get("overview") or "").strip()
+    if overview:
+        lines += [overview, ""]
+    highlights = trend.get("highlights") or []
+    if highlights:
+        lines += ["**编辑精选**", ""]
+        for i, h in enumerate(highlights, 1):
+            lines.append(f"{i}. **{h.get('title', '')}**（{h.get('score', '')}/10）— {h.get('reason', '')}")
+        lines.append("")
+    observation = (trend.get("observation") or "").strip()
+    if observation and observation not in ("暂无", "无", "N/A"):
+        lines += [f"**补充观察**：{observation}", ""]
+    lines += ["---", ""]
+    return lines
+
+
+def build_markdown(papers: list[Paper], date_str: str, max_authors: int = 6,
+                   trend: dict | None = None) -> str:
     lines = [
         f"# arxiv 每日论文日报 · {date_str}",
         "",
         f"共筛选出 **{len(papers)}** 篇相关论文（按相关性从高到低排序）。",
         "",
     ]
+    if trend:
+        lines += _markdown_trend(trend)
     for i, p in enumerate(papers, 1):
         lines.append(f"## {i}. {p.title}")
         lines.append("")
@@ -28,8 +67,19 @@ def build_markdown(papers: list[Paper], date_str: str, max_authors: int = 6) -> 
         lines.append(f"- **作者**：{', '.join(p.authors[:max_authors])}{' 等' if len(p.authors) > max_authors else ''}")
         if p.affiliations:
             lines.append(f"- **发表机构**：{'；'.join(p.affiliations)}")
-        lines.append(f"- **分类**：{', '.join(p.categories)}")
-        lines.append(f"- **链接**：[摘要页]({p.entry_url})　|　[PDF]({p.pdf_url})")
+        cats = _ordered_categories(p)
+        cats_str = ", ".join(cats)
+        if p.primary_category and cats:
+            cats_str = f"{cats[0]}（主）" + ("，" + ", ".join(cats[1:]) if len(cats) > 1 else "")
+        lines.append(f"- **分类**：{cats_str}")
+        if p.comment:
+            lines.append(f"- **作者备注**：{p.comment}")
+        if p.journal_ref:
+            lines.append(f"- **发表于**：{p.journal_ref}")
+        link = f"[摘要页]({p.entry_url})　|　[PDF]({p.pdf_url})"
+        if p.doi:
+            link += f"　|　[DOI]({_doi_url(p.doi)})"
+        lines.append(f"- **链接**：{link}")
         lines.append("")
         lines.append(p.summary or "_（未生成 AI 总结，可在仪表盘按需生成）_")
         lines.append("")
@@ -56,7 +106,8 @@ def write_markdown(content: str, out_dir: str | Path, date_str: str) -> Path:
     return path
 
 
-def write_json(papers: list[Paper], out_dir: str | Path, date_str: str) -> Path:
+def write_json(papers: list[Paper], out_dir: str | Path, date_str: str,
+               trend: dict | None = None) -> Path:
     """写出当日 JSON 日报，并维护一个 index.json 历史列表（供网页读取）。"""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -64,6 +115,7 @@ def write_json(papers: list[Paper], out_dir: str | Path, date_str: str) -> Path:
         "date": date_str,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "count": len(papers),
+        "trend": trend,
         "papers": [p.to_dict() for p in papers],
     }
     path = out_dir / f"digest-{date_str}.json"
@@ -119,7 +171,12 @@ def _email_card(i: int, p: Paper, max_authors: int) -> str:
     authors = ", ".join(_escape(a) for a in p.authors[:max_authors])
     if len(p.authors) > max_authors:
         authors += " 等"
-    cats = _escape(", ".join(p.categories))
+    ocats = _ordered_categories(p)
+    if p.primary_category and ocats:
+        cats = _escape(ocats[0]) + "（主）" + (
+            "，" + _escape(", ".join(ocats[1:])) if len(ocats) > 1 else "")
+    else:
+        cats = _escape(", ".join(ocats))
 
     # 总结区：成功=正常色，失败/未生成=灰色提示
     s = (p.summary or "").strip()
@@ -136,6 +193,24 @@ def _email_card(i: int, p: Paper, max_authors: int) -> str:
             f'<div style="color:{_C["muted"]};font-size:12.5px;margin:4px 0;">'
             f'发表机构：{_escape("；".join(p.affiliations))}</div>'
         )
+
+    # 作者备注（常含会议接收/代码链接）与期刊引用：有则显示
+    extra_rows = ""
+    if p.comment:
+        extra_rows += (
+            f'<div style="color:{_C["muted"]};font-size:12.5px;margin:4px 0;">'
+            f'备注：{_escape(p.comment)}</div>'
+        )
+    if p.journal_ref:
+        extra_rows += (
+            f'<div style="color:{_C["green"]};font-size:12.5px;margin:4px 0;">'
+            f'发表于：{_escape(p.journal_ref)}</div>'
+        )
+
+    doi_link = ""
+    if p.doi:
+        doi_link = (f' · <a href="{_escape(_doi_url(p.doi))}" '
+                    f'style="color:{_C["accent"]};text-decoration:none;">DOI</a>')
 
     return f"""
     <div style="background:{_C['panel']};border:1px solid {_C['border']};border-radius:12px;
@@ -157,20 +232,59 @@ def _email_card(i: int, p: Paper, max_authors: int) -> str:
         </tr>
       </table>
       <div style="color:{_C['accent']};font-size:13px;margin:8px 0 6px;">{_escape(p.reason or "")}</div>
-      <div style="color:{_C['muted']};font-size:12.5px;margin:4px 0;">{authors}</div>
+      <div style="color:{_C['muted']};font-size:12.5px;margin:4px 0;">作者：{authors}</div>
       {aff_row}
+      {extra_rows}
       <div style="color:{_C['muted']};font-size:12.5px;margin:4px 0;">{cats} ·
         <a href="{_escape(p.entry_url)}" style="color:{_C['accent']};text-decoration:none;">摘要页</a> ·
-        <a href="{_escape(p.pdf_url)}" style="color:{_C['accent']};text-decoration:none;">PDF</a>
+        <a href="{_escape(p.pdf_url)}" style="color:{_C['accent']};text-decoration:none;">PDF</a>{doi_link}
       </div>
       <div style="background:{_C['panel2']};border-radius:8px;padding:12px 14px;font-size:13.5px;
                   color:{summary_color};margin-top:10px;line-height:1.7;">{summary_inner}</div>
     </div>"""
 
 
-def _build_email_html(papers: list[Paper], date_str: str, max_authors: int = 6) -> str:
+def _email_trend(trend: dict) -> str:
+    """趋势综述邮件区块（内联样式，置于卡片之前）。全部文本转义防注入。"""
+    overview = _escape((trend.get("overview") or "").strip())
+    items = ""
+    for h in (trend.get("highlights") or []):
+        items += (
+            f'<li style="margin:8px 0;">'
+            f'<span style="display:inline-block;background:{_score_badge_bg(h.get("score", 0))};'
+            f'color:#fff;font-weight:700;border-radius:6px;padding:1px 7px;font-size:12px;'
+            f'margin-right:6px;">{h.get("score", "")}</span>'
+            f'<strong style="color:{_C["fg"]};">{_escape(h.get("title", ""))}</strong>'
+            f'<div style="color:{_C["muted"]};font-size:12.5px;margin-top:2px;">'
+            f'{_escape(h.get("reason", ""))}</div></li>'
+        )
+    hl_block = (
+        f'<div style="font-weight:700;color:{_C["fg"]};margin:12px 0 4px;">编辑精选</div>'
+        f'<ol style="margin:0;padding-left:20px;">{items}</ol>'
+    ) if items else ""
+    observation = (trend.get("observation") or "").strip()
+    obs_block = ""
+    if observation and observation not in ("暂无", "无", "N/A"):
+        obs_block = (
+            f'<div style="color:{_C["muted"]};font-size:12.5px;margin-top:12px;">'
+            f'补充观察：{_escape(observation)}</div>'
+        )
+    ov_block = (f'<div style="color:{_C["fg"]};font-size:13.5px;line-height:1.7;">{overview}</div>'
+                if overview else "")
+    return f"""
+    <div style="background:{_C['panel']};border:1px solid {_C['border']};border-radius:12px;
+                padding:16px 18px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:800;color:{_C['accent']};
+                  letter-spacing:.3px;margin-bottom:8px;">📌 今日速览</div>
+      {ov_block}{hl_block}{obs_block}
+    </div>"""
+
+
+def _build_email_html(papers: list[Paper], date_str: str, max_authors: int = 6,
+                      trend: dict | None = None) -> str:
     """生成与网页仪表盘同风格的 HTML 邮件（全内联样式，兼容主流邮件客户端）。"""
     cards = "".join(_email_card(i, p, max_authors) for i, p in enumerate(papers, 1))
+    trend_block = _email_trend(trend) if trend else ""
     header = f"""
     <div style="background:{_C['accent']};
                 background:linear-gradient(135deg,{_C['accent']},{_C['accent2']});
@@ -189,7 +303,7 @@ def _build_email_html(papers: list[Paper], date_str: str, max_authors: int = 6) 
     <div style="margin:0;padding:20px;background:{_C['bg']};">
       <div style="max-width:720px;margin:0 auto;font-family:{_FONT};
                   color:{_C['fg']};font-size:14px;line-height:1.6;">
-        {header}{cards}{footer}
+        {header}{trend_block}{cards}{footer}
       </div>
     </div>"""
     return f"<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;'>{body}</body></html>"
@@ -199,7 +313,8 @@ class EmailNotConfigured(Exception):
     """SMTP 必填项缺失（host/username/password/to_addrs）。"""
 
 
-def deliver_digest_email(cfg: Config, papers: list[Paper], date_str: str) -> list[str]:
+def deliver_digest_email(cfg: Config, papers: list[Paper], date_str: str,
+                         trend: dict | None = None) -> list[str]:
     """构建并发送日报邮件，返回收件人列表。
 
     与 send_email 不同：这里**会抛异常**——配置不完整抛 EmailNotConfigured，
@@ -215,7 +330,7 @@ def deliver_digest_email(cfg: Config, papers: list[Paper], date_str: str) -> lis
     msg["Subject"] = f"[arxiv日报] {date_str} 共 {len(papers)} 篇相关论文"
     msg["From"] = ec.from_addr or ec.username
     msg["To"] = ", ".join(ec.to_addrs)
-    html = _build_email_html(papers, date_str, cfg.max_authors_shown)
+    html = _build_email_html(papers, date_str, cfg.max_authors_shown, trend=trend)
     msg.attach(MIMEText(html, "html", "utf-8"))
 
     if ec.use_ssl:
@@ -229,12 +344,13 @@ def deliver_digest_email(cfg: Config, papers: list[Paper], date_str: str) -> lis
     return list(ec.to_addrs)
 
 
-def send_email(cfg: Config, papers: list[Paper], date_str: str, send: bool = False) -> None:
+def send_email(cfg: Config, papers: list[Paper], date_str: str, send: bool = False,
+               trend: dict | None = None) -> None:
     """流水线用：是否发送由 send 决定（默认不发）；失败只打印、不中断运行。"""
     if not send:
         return
     try:
-        to = deliver_digest_email(cfg, papers, date_str)
+        to = deliver_digest_email(cfg, papers, date_str, trend=trend)
         print(f"  [推送] 邮件已发送至 {', '.join(to)}")
     except EmailNotConfigured as e:
         print(f"  [推送] {e}，跳过邮件发送。")
@@ -243,24 +359,25 @@ def send_email(cfg: Config, papers: list[Paper], date_str: str, send: bool = Fal
 
 
 def push_all(cfg: Config, papers: list[Paper], date_str: str | None = None,
-             *, email: bool = False) -> dict:
+             *, email: bool = False, trend: dict | None = None) -> dict:
     """生成日报并推送，返回产物路径信息。date_str 为日报日期标签。
 
     email: 运行时邮件开关（默认 False，不发邮件）；为 True 才尝试按 config 的
     SMTP 参数发送当天日报。
+    trend: 今日趋势综述（可空），会写入 JSON 并渲染进 markdown / 邮件顶部。
     """
     if not date_str:
         date_str = datetime.now().strftime("%Y-%m-%d")
     result: dict = {"date": date_str, "markdown": None, "json": None}
 
     # JSON 始终生成（网页读取）
-    json_path = write_json(papers, "digests", date_str)
+    json_path = write_json(papers, "digests", date_str, trend=trend)
     result["json"] = str(json_path)
 
     if cfg.push.markdown:
-        content = build_markdown(papers, date_str, cfg.max_authors_shown)
+        content = build_markdown(papers, date_str, cfg.max_authors_shown, trend=trend)
         md_path = write_markdown(content, "digests", date_str)
         result["markdown"] = str(md_path)
 
-    send_email(cfg, papers, date_str, send=email)
+    send_email(cfg, papers, date_str, send=email, trend=trend)
     return result

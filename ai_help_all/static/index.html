@@ -43,6 +43,8 @@
   }
   button:disabled { background: #c2c8d2; cursor: not-allowed; }
   button.ghost { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); }
+  button.btn-email { background: var(--accent2); color: #fff; border: none; }
+  button.btn-email:hover:not(:disabled) { opacity: .9; }
   select { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
   input[type=date], input[type=number] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-size: 13px; }
   input[type=number] { width: 50px; }
@@ -100,6 +102,17 @@
   details.abs .abs-en { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .trend-card { background: linear-gradient(135deg, rgba(47,111,235,.07), rgba(124,92,255,.07)); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; }
+  .trend-head { font-weight: 800; color: var(--accent); font-size: 13.5px; letter-spacing: .3px; margin-bottom: 8px; }
+  .trend-overview { color: var(--fg); font-size: 13.5px; line-height: 1.75; }
+  .trend-sub { font-weight: 700; color: var(--fg); margin: 12px 0 4px; font-size: 13px; }
+  .trend-list { margin: 0; padding-left: 22px; }
+  .trend-list li { margin: 8px 0; }
+  .trend-list .badge { margin-right: 6px; }
+  .trend-hl-title { font-weight: 600; }
+  .trend-reason { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .trend-obs { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
+  .card .meta.cmt { color: var(--muted); }
   .empty { color: var(--muted); text-align: center; padding: 30px; }
   .hidden { display: none; }
 </style>
@@ -160,7 +173,7 @@
       <option value="tag">按标签</option>
       <option value="summarized">按是否总结</option>
     </select>
-    <button id="emailDigestBtn" class="ghost" title="把当前查看的这天日报按邮件格式发送（需先配好 push.email）" style="margin-left:auto;display:none">✉ 发送邮件</button>
+    <button id="emailDigestBtn" class="btn-email" title="把当前查看的这天日报按邮件格式发送（需先配好 push.email）" style="margin-left:auto;display:none">✉ 发送邮件</button>
   </div>
   <div id="results"></div>
 </main>
@@ -170,6 +183,7 @@ const $ = (id) => document.getElementById(id);
 let currentDate = "";   // 历史查看/单天运行对应的日报日期
 let currentDay = "";    // 多天运行时，当前正在处理的那一天
 let currentCardsEl = null;   // 当前天的卡片容器
+let currentTrendEl = null;   // 当前天的趋势综述容器
 let boundaryHour = 8, tzOffset = 8;   // 来自配置：分界小时 / 时区偏移
 let TAGS = [];               // 配置里的标签顺序
 let collapsed = {};          // 记住各分组的折叠状态：composite key -> true(已折叠)
@@ -185,12 +199,53 @@ function newDaySection(date, index, total) {
     h.innerHTML = `📅 ${date} <span class="sub">第 ${index}/${total} 天</span>`;
     sec.appendChild(h);
   }
+  const trendEl = document.createElement("div");
+  trendEl.className = "day-trend";
+  sec.appendChild(trendEl);
   const cardsEl = document.createElement("div");
   cardsEl.className = "day-cards";
   sec.appendChild(cardsEl);
   $("results").appendChild(sec);
+  currentTrendEl = trendEl;
   currentCardsEl = cardsEl;
   return cardsEl;
+}
+
+// 渲染趋势综述卡片到给定容器（el）
+function renderTrend(el, trend) {
+  if (!el || !trend) return;
+  const ov = trend.overview ? `<div class="trend-overview">${renderSummary(trend.overview)}</div>` : "";
+  let hl = "";
+  const hls = trend.highlights || [];
+  if (hls.length) {
+    hl = `<div class="trend-sub">编辑精选</div><ol class="trend-list">` +
+      hls.map(h => `<li><span class="badge ${badgeClass(h.score)}">${h.score}</span>` +
+        `<span class="trend-hl-title">${escapeHtml(h.title || "")}</span>` +
+        `<div class="trend-reason">${escapeHtml(h.reason || "")}</div></li>`).join("") +
+      `</ol>`;
+  }
+  const obs = (trend.observation || "").trim();
+  const obsBlock = (obs && !["暂无", "无", "N/A"].includes(obs))
+    ? `<div class="trend-obs">补充观察：${escapeHtml(obs)}</div>` : "";
+  el.innerHTML = `<div class="trend-card"><div class="trend-head">📌 今日速览</div>${ov}${hl}${obsBlock}</div>`;
+}
+
+function orderedCats(p) {
+  const cats = (p.categories || []).slice();
+  const pc = p.primary_category;
+  if (pc) return [pc, ...cats.filter(c => c !== pc)];
+  return cats;
+}
+function catsLabel(p) {
+  const cats = orderedCats(p);
+  if (p.primary_category && cats.length) {
+    return escapeHtml(cats[0]) + "（主）" + (cats.length > 1 ? "，" + escapeHtml(cats.slice(1).join(", ")) : "");
+  }
+  return escapeHtml(cats.join(", "));
+}
+function doiUrl(doi) {
+  const d = (doi || "").trim();
+  return /^https?:\/\//.test(d) ? d : ("https://doi.org/" + d);
 }
 
 // 计算某卡片在当前模式下的分组键与显示标签
@@ -253,7 +308,7 @@ function applyGrouping() {
 }
 const STAGES = [
   ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
-  ["summarize", "生成总结"], ["push", "推送/归档"],
+  ["summarize", "生成总结"], ["trend", "趋势综述"], ["push", "推送/归档"],
 ];
 let cards = {}; // short_id -> {el, summaryEl}
 
@@ -302,6 +357,11 @@ function makeCard(p) {
   el.className = "card";
   const authors = (p.authors || []).slice(0, 6).join(", ") + ((p.authors||[]).length > 6 ? " 等" : "");
   const tag = p.tag || "其他";
+  const comment = (p.comment || "").trim();
+  const journal = (p.journal_ref || "").trim();
+  const commentRow = comment ? `<div class="meta cmt">备注：${escapeHtml(comment)}</div>` : "";
+  const journalRow = journal ? `<div class="meta" style="color:var(--green)">发表于：${escapeHtml(journal)}</div>` : "";
+  const doiLink = p.doi ? ` · <a href="${doiUrl(p.doi)}" target="_blank">DOI</a>` : "";
   el.innerHTML = `
     <div class="top">
       <span class="badge ${badgeClass(p.score)}">${p.score}</span>
@@ -309,11 +369,13 @@ function makeCard(p) {
       <span class="tagchip">${escapeHtml(tag)}</span>
     </div>
     <div class="reason">${escapeHtml(p.reason || "")}</div>
-    <div class="meta">${escapeHtml(authors)}</div>
+    <div class="meta">作者：${escapeHtml(authors)}</div>
     <div class="meta aff">发表机构：<span class="aff-val" style="color:var(--muted)">${p.will_summarize === false ? "（未生成）" : "解析中…"}</span></div>
-    <div class="meta">${escapeHtml((p.categories||[]).join(", "))} ·
+    ${commentRow}
+    ${journalRow}
+    <div class="meta">${catsLabel(p)} ·
       <a href="${p.entry_url}" target="_blank">摘要页</a> ·
-      <a href="${p.pdf_url}" target="_blank">PDF</a></div>
+      <a href="${p.pdf_url}" target="_blank">PDF</a>${doiLink}</div>
     <div class="summary"></div>
     <details class="abs">
       <summary class="abs-sum">原始摘要</summary>
@@ -367,7 +429,7 @@ function renderSummaryArea(short_id, p) {
   if (st === "ok") {
     const { head, body } = splitSummary(p.summary);
     el.innerHTML = renderSummary(head) +
-      (body ? `<details class="sum-more"><summary>展开完整解读（背景 / 洞见 / 方法 / 相关 / 展望）</summary>${renderSummary(body)}</details>` : "");
+      (body ? `<details class="sum-more"><summary>展开完整解读</summary>${renderSummary(body)}</details>` : "");
   } else if (st === "pending") {
     el.innerHTML = `<span class="spinner"></span>总结生成中…`;
   } else if (st === "failed") {
@@ -422,6 +484,7 @@ function resetUI() {
   cards = {};
   currentDay = "";
   currentCardsEl = null;
+  currentTrendEl = null;
   $("results").innerHTML = "";
   $("log").innerHTML = "";
   $("scored").innerHTML = "";
@@ -492,6 +555,17 @@ function handle(ev) {
       fillCard(payload.short_id, payload);
       if ($("sortMode") && $("sortMode").value === "summarized") applyGrouping();
       break;
+    case "trend": {
+      // 渲染到对应日期的分区（多天时各有一份）
+      let el = currentTrendEl;
+      if (payload.date) {
+        const sec = document.querySelector(`.day-section[data-date="${payload.date}"]`);
+        if (sec) el = sec.querySelector(".day-trend");
+      }
+      renderTrend(el, payload.trend);
+      log("📌 今日速览已生成");
+      break;
+    }
     case "dry_run_candidates": {
       $("resultsHead").classList.remove("hidden");
       const frag = (payload.papers||[]).map(p =>
@@ -681,6 +755,7 @@ async function showHistory(date) {
   $("resultsHead").classList.remove("hidden");
   $("emailDigestBtn").style.display = (d.papers && d.papers.length) ? "" : "none";
   newDaySection(date, 1, 1);
+  if (d.trend) renderTrend(currentTrendEl, d.trend);
   (d.papers || []).forEach(p => {
     makeCard({ ...p, date });
     fillCard(p.short_id, p);

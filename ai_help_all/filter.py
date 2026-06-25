@@ -12,9 +12,11 @@ from .config import Config
 from .events import Emitter, noop_emit
 from .llm_client import LLMClient
 
-_FILTER_SYS = """你是一个科研论文筛选助手。用户会给出他的研究兴趣、一个可用标签列表，以及一批 arxiv 论文(含编号、标题、摘要)。
+_FILTER_SYS = """你是一个科研论文筛选助手。用户会给出他的研究兴趣、一个可用标签列表，以及一批 arxiv 论文(含编号、标题、摘要，部分附有作者备注)。
 请你判断每篇论文与用户兴趣的相关程度，按 1-10 打分(10=高度相关且重要，1=完全不相关)；
 并从"可用标签"中为每篇选一个最贴切的标签(tag)，无法明确归类时用 "其他"。
+作者备注(comment)可能含会议/期刊接收信息(如 "Accepted to NeurIPS 2024")、代码链接或页数等：
+被顶级会议/期刊接收是「重要性」的正向信号，可据此适度上调分数；但相关性仍以研究兴趣的匹配度为主，不要仅因被接收就给高分。
 只返回 JSON 数组，每个元素形如 {"index": <论文序号>, "score": <1-10整数>, "reason": "<一句中文理由>", "tag": "<标签>"}。
 不要输出 JSON 以外的任何内容。"""
 
@@ -28,9 +30,11 @@ def _build_user_prompt(interests: str, batch: list[Paper], abstract_chars: int,
     ]
     for i, p in enumerate(batch):
         abstract = p.abstract[:abstract_chars]
-        lines.append(
-            f"\n[{i}] 标题: {p.title}\n分类: {', '.join(p.categories)}\n摘要: {abstract}"
-        )
+        entry = f"\n[{i}] 标题: {p.title}\n分类: {', '.join(p.categories)}\n摘要: {abstract}"
+        if p.comment:
+            # 备注可能很长（含 latex/链接），截断以控制 token
+            entry += f"\n作者备注: {p.comment[:300]}"
+        lines.append(entry)
     lines.append(
         '\n请输出 JSON 数组，形如: [{"index":0,"score":8,"reason":"...","tag":"训练"}]'
     )

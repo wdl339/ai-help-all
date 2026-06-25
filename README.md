@@ -11,13 +11,15 @@
 
 - [RunRiotComeOn/arXiv-Daily-Summarizer](https://github.com/RunRiotComeOn/arXiv-Daily-Summarizer)
 - [ZhuYizhou2333/ArXiv-Pusher](https://github.com/ZhuYizhou2333/ArXiv-Pusher)
+- [JoeLeelyf/customize-arxiv-daily](https://github.com/JoeLeelyf/customize-arxiv-daily)
+- [ziwenhahaha/daily-paper-reader](https://github.com/ziwenhahaha/daily-paper-reader)
 
 > 致谢：感谢上述项目作者的开源分享，也感谢 [arXiv](https://arxiv.org/) 提供开放的论文库。
 
 ## 功能流程
 
 ```
-爬取 arxiv  →  历史去重  →  LLM 打分并筛选  →  高分文章逐篇总结  →  推送
+爬取 arxiv  →  历史去重  →  LLM 打分并筛选  →  高分文章逐篇总结  →  今日趋势综述  →  推送
 ```
 
 每篇入选论文会产出：中文结构化总结、**作者单位/发表机构**、
@@ -58,7 +60,7 @@ python serve.py            # 默认监听 127.0.0.1:8000
   （多数 IDE 会自动检测；若没有就「添加端口」填 `8000`），点该端口地址在浏览器打开。
 - **本地**：直接浏览器访问 `http://127.0.0.1:8000`，或用编辑器命令面板的 “Simple Browser: Show”。
 
-点「运行」后可实时看到：5 个阶段进度、打分进度条与实时打分流、入选论文的卡片。顶部工具栏可勾选 **“重新生成”**（忽略已存在的日报，重新运行流程）、查看历史日报。
+点「运行」后可实时看到：阶段进度、打分进度条与实时打分流、入选论文的卡片。顶部工具栏可勾选 **“重新生成”**（忽略已存在的日报，重新运行流程）、查看历史日报。
 即使运行中途刷新页面、查看历史日报，都能重新接回正在进行的进度。
 
 ## 安全说明（重要）
@@ -107,6 +109,7 @@ python main.py --refresh
 - `fetch_affiliations`：是否下载 PDF 首页提取作者单位（arxiv API 不提供机构信息，
   且 OpenAlex 等对当天新论文有索引延迟，故从 PDF 首页由 LLM 抽取）。关掉可省下载时间。
 - `summarize_fulltext` / `fulltext_max_chars`：总结是否基于全文、以及全文截断长度（打分始终只用摘要）。
+- `trend_summary`：是否在每份日报顶部生成「今日速览」趋势综述（默认开；额外 1 次 LLM 调用/天，用总结模型）。
 - `llm.filter_model / summarize_model`：可选模型见下表。
 - `llm.requests_per_minute / tokens_per_minute`：API 限速参数（默认按额度留了余量，详见「可用模型」）。
 - `push.email`：可选邮件推送，默认关闭（详细配置见下方「邮件推送」）。

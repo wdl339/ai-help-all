@@ -72,6 +72,10 @@ summarize_fulltext: true
 # 全文喂给 LLM 前截断到多少字符（越大越完整但越耗 token；一篇论文正文常 4-6 万字符）
 fulltext_max_chars: 48000
 
+# 是否在每份日报顶部生成「今日趋势综述」：综观当天入选论文，给出整体趋势 + 编辑精选 3-5 篇。
+# 用「总结模型」生成，每天仅额外 1 次 LLM 调用；展示在 仪表盘 / 邮件 / markdown 顶部。
+trend_summary: true
+
 # ---- LLM 设置 ----
 # 可用模型(SJTU 交我算 API)调用名 / 上下文 / 说明：
 #   glm-5.1            GLM-5.1        128k  强；直接返回内容，适合批量打分（默认筛选模型）
@@ -106,6 +110,8 @@ llm:
   filter_max_tokens: 2048
   # 总结要产出 多段深度解读 + 摘要翻译 + 作者单位（思考模型还会先消耗 token 推理），故留足余量
   summarize_max_tokens: 8192
+  # 趋势综述（每天 1 次）的最大输出 token（思考模型需留足推理余量）
+  trend_max_tokens: 6144
   # 总结输出语言
   language: 中文
 

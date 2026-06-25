@@ -190,6 +190,10 @@ def _paper_from_dict(d: dict) -> Paper:
         authors=d.get("authors", []),
         abstract=d.get("abstract", ""),
         categories=d.get("categories", []),
+        primary_category=d.get("primary_category", ""),
+        comment=d.get("comment", ""),
+        journal_ref=d.get("journal_ref", ""),
+        doi=d.get("doi", ""),
         published=_dt(d.get("published")),
         updated=_dt(d.get("updated")),
         pdf_url=d.get("pdf_url", ""),
@@ -235,6 +239,7 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
             "max_concurrency": cfg.llm.max_concurrency,
             "summarize_fulltext": cfg.summarize_fulltext,
             "fulltext_max_chars": cfg.fulltext_max_chars,
+            "trend_summary": cfg.trend_summary,
             "interests": cfg.interests,
         })
 
@@ -276,7 +281,7 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
 
         try:
             cfg = load_config(config_path)
-            to = deliver_digest_email(cfg, papers, safe)
+            to = deliver_digest_email(cfg, papers, safe, trend=data.get("trend"))
         except EmailNotConfigured as e:
             return JSONResponse({"error": str(e)}, status_code=400)
         except Exception as e:  # noqa: BLE001

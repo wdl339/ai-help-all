@@ -15,6 +15,7 @@ from .llm_client import LLMClient
 from .push import push_all
 from .seen import filter_unseen, load_seen, save_seen
 from .summarizer import summarize_all
+from .trend import generate_trend
 from .usage import record_usage
 
 Cancel = Callable[[], bool]
@@ -113,9 +114,27 @@ def _run_one_day(
         summarize_all(llm, cfg, to_summarize, emit=emit, cancel=cancel)
         emit("stage", {"name": "summarize", "status": "done", "date": day_label, "message": f"{day_label}：总结完成"})
 
+    # 4.5 今日趋势综述（综观当天入选论文，额外 1 次 LLM 调用；失败不影响主流程）
+    trend = None
+    if cfg.trend_summary and not cancel():
+        emit("stage", {"name": "trend", "status": "start", "date": day_label,
+                       "message": f"{day_label}：生成今日趋势综述"})
+        try:
+            trend = generate_trend(llm, cfg, kept, cancel=cancel)
+        except RuntimeError as e:
+            emit("error", {"message": f"趋势综述生成失败，跳过: {e}"})
+            trend = None
+        if trend:
+            emit("trend", {"date": day_label, "trend": trend})
+            emit("stage", {"name": "trend", "status": "done", "date": day_label,
+                           "message": f"{day_label}：趋势综述完成（精选 {len(trend.get('highlights', []))} 篇）"})
+        else:
+            emit("stage", {"name": "trend", "status": "done", "date": day_label,
+                           "message": f"{day_label}：未生成趋势综述"})
+
     # 5. 推送（该天独立日报）
     emit("stage", {"name": "push", "status": "start", "date": day_label, "message": f"{day_label}：生成日报"})
-    result = push_all(cfg, kept, date_str=day_label, email=email)
+    result = push_all(cfg, kept, date_str=day_label, email=email, trend=trend)
     emit("stage", {"name": "push", "status": "done", "date": day_label, "message": f"已生成: {result.get('json')}"})
     emit("pushed", result)
 
