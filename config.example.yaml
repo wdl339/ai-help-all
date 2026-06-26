@@ -4,24 +4,26 @@
 # ---- arxiv 爬取设置 ----
 arxiv:
   # 关注的 arxiv 主分类，见 https://arxiv.org/category_taxonomy
+  # MLSys / AI Infra 相关分类：
   categories:
-    - cs.DC   # 分布式/并行计算
-    - cs.LG   # 机器学习
-    - cs.AR   # 硬件体系结构
-    - cs.PF   # 性能
-    - cs.AI   # 人工智能
+    - cs.DC   # 分布式/并行计算（训练、调度、通信）
+    - cs.LG   # 机器学习（系统与算法）
+    - cs.AR   # 硬件体系结构（GPU/NPU/加速器）
+    - cs.PF   # 性能（profiling、benchmark）
+    - cs.AI   # 人工智能（算法面）
     - cs.CL   # NLP / 大模型
-  # 窗口天数。结合“分界小时”：对参考日期 D，窗口 = [D-days_back 天的分界点, D 的分界点)。
-  # 例：D=6/24、分界8点、days_back=1 → 6/23 08:00 ~ 6/24 08:00（本地时间）。运行时可临时改。
+    - cs.OS   # 操作系统 / 运行时
+  # 窗口天数。结合下面的“分界小时”：对参考日期 D，窗口 = [D-days_back 天的分界点, D 的分界点)。
+  # 例：D=6/24、分界8点、days_back=1 → 6/23 08:00 ~ 6/24 08:00（本地时间）。运行时也可在网页/命令行临时改。
   days_back: 1
-  # “一天”的分界小时（本地时区，0-23）。8 表示一天从早上 8 点到次日 8 点。
+  # “一天”的分界小时（本地时区，0-23）。8 表示一天从早上 8 点算到次日 8 点。
   day_boundary_hour: 8
-  # 本地时区相对 UTC 的偏移小时（北京=8）。
+  # 本地时区相对 UTC 的偏移小时（北京=8）。用于把“分界小时”对齐到 UTC（arxiv 时间是 UTC）。
   tz_offset_hours: 8
   # 每天最多从 arxiv 拉取多少篇候选（每天上限；多天时实际上限 = 本值 × 天数）。
   # 一天 7 个分类约 300-400 篇，设大些以免漏。
   max_results: 500
-  # arxiv 抓取调优（一般不用改）：每页条数 / 请求间隔(秒) / 失败重试次数
+  # arxiv 抓取调优（一般不用改）：每页条数 / 请求间隔(秒,礼貌延迟) / 失败重试次数
   page_size: 100
   request_delay_seconds: 3.0
   fetch_retries: 3
@@ -52,7 +54,7 @@ interests: |
 # 相关性打分阈值（1-10），>= 该分数的论文才会被总结并推送
 relevance_threshold: 6
 # 每份日报最多自动 AI 总结多少篇。多天 = 逐天各出一份独立日报，每份取当天相关性最高的前 N 篇。
-# 例：days_back=2 → 生成两份日报，每份各 N 篇，而不是 2 天合计 N 篇。
+# 例：days_back=2 → 生成两份日报（前天/昨天各一份），每份各 N 篇，而不是 2 天合计 N 篇。
 # 其余达到阈值的论文仍会保留，只是不自动总结，可在网页上按需单独「生成总结」。
 max_summarize: 15
 # 给入选论文自动打的标签（由你定义）。LLM 会为每篇从下面列表里选一个最贴切的；
@@ -85,20 +87,20 @@ fulltext_max_chars: 48000
 trend_summary: true
 
 # ---- LLM 设置 ----
-# 可用模型(SJTU 交我算 API)调用名 / 上下文 / 说明：
-#   glm-5.1            GLM-5.1        128k  强；直接返回内容，适合批量打分（默认筛选模型）
-#   minimax-m2.7       MiniMax-M2.7   192k  强；思考模型，总结质量高（默认总结模型，需较大 max_tokens）
-#   deepseek-chat      DeepSeek V3.2  32k   通用文本
-#   deepseek-reasoner  DeepSeek V3.2  32k   复杂推理(不接受 temperature)
-#   qwen3.5-27b        Qwen3.5-27B    256k  最快，备选筛选模型
-# 用 `python main.py --list-models` 可校验密钥并查看实际可用模型 id。
+# 可用模型(SJTU 交我算 API)调用名 / 上下文长度：
+#   glm-5.1            GLM-5.1                 128k  (强；直接返回内容，适合批量打分=默认筛选模型)
+#   minimax-m2.7       MiniMax-M2.7            192k  (强；思考模型，总结质量高=默认总结模型，需较大 max_tokens)
+#   deepseek-chat      DeepSeek V3.2 常规模式   32k
+#   deepseek-reasoner  DeepSeek V3.2 思考模式   32k  (不接受 temperature)
+#   qwen3.5-27b        Qwen3.5-27B            256k  (最快，备选筛选模型)
+# 可用 `python main.py --list-models` 校验密钥并查看实际可用模型。
 llm:
   base_url: https://models.sjtu.edu.cn/api/v1
   # 推荐用环境变量 AI_HELP_ALL_API_KEY，留空则读环境变量（不要把真实 key 写进会上传 git 的文件！）
   api_key: ""
   # 筛选用模型（批量结构化打分，glm 直接返回 JSON、稳定）
   filter_model: glm-5.1
-  # 总结用模型（minimax 总结质量高；它是思考模型，summarize_max_tokens 要留足）
+  # 总结用模型（minimax 总结质量高；它是思考模型，下面 summarize_max_tokens 需留足）
   summarize_model: minimax-m2.7
   # 请求数限速（申请额度：每分钟 10 次，留 1 余量）
   requests_per_minute: 9
@@ -110,7 +112,7 @@ llm:
   request_timeout: 180
   # 超时/失败的最大尝试次数，用尽仍失败则该篇标记失败（可在网页上单独「重新总结」）
   max_retries: 2
-  # 一次筛选 prompt 里塞多少篇论文（控制单请求 token；用大上下文模型可调大）
+  # 一次筛选 prompt 里塞多少篇论文（控制单请求 token）
   filter_batch_size: 20
   # 筛选时每篇摘要截断到多少字符（够覆盖绝大多数摘要；调大更全但更耗 token）
   filter_abstract_chars: 1200

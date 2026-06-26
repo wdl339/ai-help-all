@@ -336,7 +336,7 @@ function applyGrouping() {
 }
 const STAGES = [
   ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
-  ["summarize", "生成总结"], ["trend", "趋势综述"], ["push", "推送/归档"],
+  ["summarize", "生成总结"], ["trend", "趋势综述"], ["push", "归档推送"],
 ];
 let cards = {}; // short_id -> {el, summaryEl}
 
@@ -725,7 +725,7 @@ async function loadConfig() {
     if (c.today && !$("runDate").value) { $("runDate").value = c.today; currentDate = c.today; }
     if (c.days_back && !$("runDaysBack").value) $("runDaysBack").value = c.days_back;
     const hh = String(boundaryHour).padStart(2, "0");
-    const sumBasis = c.summarize_fulltext ? `全文（前 ${(c.fulltext_max_chars||0).toLocaleString()} 字）` : "摘要";
+    const sumBasis = c.summarize_fulltext ? `全文（前 ${(c.fulltext_max_chars||0).toLocaleString()} tokens）` : "摘要";
     // 第一行：抓取分类；紧接着 winHint(抓取窗口)；再是筛选/总结模型两行
     $("cfgCats").innerHTML = `抓取分类 <b>${c.categories.join(" / ")}</b>`;
     $("cfgModels").innerHTML = [

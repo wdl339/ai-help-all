@@ -55,15 +55,18 @@ def _run_one_day(
         return [], llm
 
     # 2. 去重
-    seen: set[str] = set()
+    # 始终加载历史已见集合：dedup 决定本次是否按它过滤；但无论是否过滤，
+    # 跑完都会把本次处理过的论文并入 seen（见下方 save_seen），避免「重新生成」
+    # 出的日报因未记录而在之后被反复重新处理。
+    seen: set[str] = load_seen()
     if dedup:
-        seen = load_seen()
         before = len(papers)
         papers = filter_unseen(papers, seen)
         emit("stage", {"name": "dedup", "status": "done", "date": day_label,
-                       "message": f"{day_label}：过滤 {before - len(papers)} 篇历史已推送，剩 {len(papers)} 篇"})
+                       "message": f"{day_label}：过滤 {before - len(papers)} 篇历史已见，剩 {len(papers)} 篇"})
     else:
-        emit("stage", {"name": "dedup", "status": "done", "date": day_label, "message": f"{day_label}：跳过去重"})
+        emit("stage", {"name": "dedup", "status": "done", "date": day_label,
+                       "message": f"{day_label}：跳过去重（重新生成，本次不按历史过滤，但仍会记入历史）"})
 
     if not papers:
         emit("stage", {"name": "push", "status": "done", "date": day_label, "message": f"{day_label}：去重后无新论文"})
@@ -103,8 +106,7 @@ def _run_one_day(
     emit("selected", {"date": day_label, "papers": sel_payload})
 
     if not kept:
-        if dedup:
-            save_seen(seen | {p.short_id for p in papers})
+        save_seen(seen | {p.short_id for p in papers})
         return [], llm
 
     # 4. 并发总结
@@ -138,8 +140,7 @@ def _run_one_day(
     emit("stage", {"name": "push", "status": "done", "date": day_label, "message": f"已生成: {result.get('json')}"})
     emit("pushed", result)
 
-    if dedup:
-        save_seen(seen | {p.short_id for p in papers})
+    save_seen(seen | {p.short_id for p in papers})
     return kept, llm
 
 
