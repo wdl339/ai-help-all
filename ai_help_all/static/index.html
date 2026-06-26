@@ -103,7 +103,8 @@
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .trend-card { background: linear-gradient(135deg, rgba(47,111,235,.07), rgba(124,92,255,.07)); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; }
-  .trend-head { font-weight: 800; color: var(--accent); font-size: 13.5px; letter-spacing: .3px; margin-bottom: 8px; }
+  .trend-card > summary.trend-head { cursor: pointer; user-select: none; font-weight: 800; color: var(--accent); font-size: 13.5px; letter-spacing: .3px; }
+  .trend-card[open] > summary.trend-head { margin-bottom: 8px; }
   .trend-overview { color: var(--fg); font-size: 13.5px; line-height: 1.75; }
   .trend-sub { font-weight: 700; color: var(--fg); margin: 12px 0 4px; font-size: 13px; }
   .trend-list { margin: 0; padding-left: 22px; }
@@ -165,7 +166,9 @@
     <div class="bar"><div id="sumBar"></div></div>
   </div>
 
-  <div id="resultsHead" class="hidden" style="display:flex;align-items:center;gap:10px;margin:8px 0">
+  <div id="trendArea"></div>
+
+  <div id="resultsHead" style="display:none;align-items:center;gap:10px;margin:8px 0">
     <h2 style="color:var(--muted);font-size:14px;margin:0">入选论文</h2>
     <span style="color:var(--muted);font-size:12.5px">分组</span>
     <select id="sortMode" style="padding:4px 8px">
@@ -183,7 +186,6 @@ const $ = (id) => document.getElementById(id);
 let currentDate = "";   // 历史查看/单天运行对应的日报日期
 let currentDay = "";    // 多天运行时，当前正在处理的那一天
 let currentCardsEl = null;   // 当前天的卡片容器
-let currentTrendEl = null;   // 当前天的趋势综述容器
 let boundaryHour = 8, tzOffset = 8;   // 来自配置：分界小时 / 时区偏移
 let TAGS = [];               // 配置里的标签顺序
 let collapsed = {};          // 记住各分组的折叠状态：composite key -> true(已折叠)
@@ -199,21 +201,46 @@ function newDaySection(date, index, total) {
     h.innerHTML = `📅 ${date} <span class="sub">第 ${index}/${total} 天</span>`;
     sec.appendChild(h);
   }
-  const trendEl = document.createElement("div");
-  trendEl.className = "day-trend";
-  sec.appendChild(trendEl);
   const cardsEl = document.createElement("div");
   cardsEl.className = "day-cards";
   sec.appendChild(cardsEl);
   $("results").appendChild(sec);
-  currentTrendEl = trendEl;
   currentCardsEl = cardsEl;
   return cardsEl;
 }
 
-// 渲染趋势综述卡片到给定容器（el）
-function renderTrend(el, trend) {
-  if (!el || !trend) return;
+// 今日速览统一渲染到 #trendArea（运行日志之下、入选论文之上），可折叠；多天各一份
+function trendSlot(date) {
+  const area = $("trendArea");
+  const key = date || "";
+  let det = Array.from(area.children).find(d => d.dataset && d.dataset.trendDate === key);
+  if (!det) {
+    det = document.createElement("details");
+    det.className = "trend-card";
+    det.open = true;
+    det.dataset.trendDate = key;
+    det.innerHTML = `<summary class="trend-head">📌 今日速览</summary><div class="trend-body"></div>`;
+    area.appendChild(det);
+  }
+  return det;
+}
+
+// 多天时给每张速览标题补上日期以区分；单天则只显示「今日速览」
+function relabelTrends() {
+  const slots = $("trendArea").querySelectorAll("details.trend-card");
+  const multi = slots.length > 1;
+  slots.forEach(det => {
+    const sm = det.querySelector("summary.trend-head");
+    if (!sm) return;
+    const d = det.dataset.trendDate || "";
+    sm.textContent = (multi && d) ? `📌 今日速览 · ${d}` : "📌 今日速览";
+  });
+}
+
+// 渲染趋势综述（按日期定位到 #trendArea 的折叠卡）
+function renderTrend(date, trend) {
+  if (!trend) return;
+  const det = trendSlot(date);
   const ov = trend.overview ? `<div class="trend-overview">${renderSummary(trend.overview)}</div>` : "";
   let hl = "";
   const hls = trend.highlights || [];
@@ -227,7 +254,8 @@ function renderTrend(el, trend) {
   const obs = (trend.observation || "").trim();
   const obsBlock = (obs && !["暂无", "无", "N/A"].includes(obs))
     ? `<div class="trend-obs">补充观察：${escapeHtml(obs)}</div>` : "";
-  el.innerHTML = `<div class="trend-card"><div class="trend-head">📌 今日速览</div>${ov}${hl}${obsBlock}</div>`;
+  det.querySelector(".trend-body").innerHTML = ov + hl + obsBlock;
+  relabelTrends();
 }
 
 function orderedCats(p) {
@@ -484,7 +512,7 @@ function resetUI() {
   cards = {};
   currentDay = "";
   currentCardsEl = null;
-  currentTrendEl = null;
+  $("trendArea").innerHTML = "";
   $("results").innerHTML = "";
   $("log").innerHTML = "";
   $("scored").innerHTML = "";
@@ -494,9 +522,16 @@ function resetUI() {
   $("sumProg").textContent = "";
   $("scorePanel").classList.add("hidden");
   $("sumPanel").classList.add("hidden");
-  $("resultsHead").classList.add("hidden");
+  $("resultsHead").style.display = "none";
   $("emailDigestBtn").style.display = "none";
+  $("stages").style.display = "";   // 运行视图显示进度灯（历史视图会再隐藏）
   initStages();
+}
+
+// 仅当结果区已有论文卡片时才显示「入选论文 分组」这一行
+function updateResultsHead() {
+  const hasCards = $("results").querySelector(".card") != null;
+  $("resultsHead").style.display = hasCards ? "flex" : "none";
 }
 
 function handle(ev) {
@@ -505,7 +540,6 @@ function handle(ev) {
     case "day_start": {
       currentDay = payload.date;
       currentDate = payload.date;
-      $("resultsHead").classList.remove("hidden");
       // 每天开始：重置阶段与进度条/打分流（但保留已完成天的结果卡片），并新建该天分区
       initStages();
       $("scored").innerHTML = ""; $("scoreBar").style.width = "0"; $("sumBar").style.width = "0";
@@ -537,10 +571,10 @@ function handle(ev) {
       while ($("scored").children.length > 80) $("scored").lastChild.remove();
       break;
     case "selected": {
-      $("resultsHead").classList.remove("hidden");
       const ps = payload.papers || [];
       ps.forEach(makeCard);
       applyGrouping();
+      updateResultsHead();
       const willSum = ps.filter(p => p.will_summarize).length;
       log(`命中 ${ps.length} 篇（${willSum} 篇将生成 AI 总结，其余保留，可按需生成）`);
       break;
@@ -556,22 +590,16 @@ function handle(ev) {
       if ($("sortMode") && $("sortMode").value === "summarized") applyGrouping();
       break;
     case "trend": {
-      // 渲染到对应日期的分区（多天时各有一份）
-      let el = currentTrendEl;
-      if (payload.date) {
-        const sec = document.querySelector(`.day-section[data-date="${payload.date}"]`);
-        if (sec) el = sec.querySelector(".day-trend");
-      }
-      renderTrend(el, payload.trend);
+      renderTrend(payload.date, payload.trend);
       log("📌 今日速览已生成");
       break;
     }
     case "dry_run_candidates": {
-      $("resultsHead").classList.remove("hidden");
       const frag = (payload.papers||[]).map(p =>
         `<div class="card"><div class="meta">[${escapeHtml((p.categories||[]).join(", "))}]</div>
          <h3 class="title">${escapeHtml(p.title)}</h3></div>`).join("");
       (currentCardsEl || $("results")).insertAdjacentHTML("beforeend", frag);   // 追加到当天分区
+      updateResultsHead();
       break;
     }
     case "pushed":
@@ -749,18 +777,18 @@ async function showHistory(date) {
   currentDate = date;
   detachStream();   // 切去看历史时只断开本页进度流，后台运行继续
   resetUI();
-  STAGES.forEach(([k]) => setStage(k, "done"));
+  $("stages").style.display = "none";   // 查看历史时不显示运行进度灯那一行
   const d = await (await fetch("/api/digest/" + date)).json();
   if (d.error) { log("加载失败: " + d.error, true); return; }
-  $("resultsHead").classList.remove("hidden");
   $("emailDigestBtn").style.display = (d.papers && d.papers.length) ? "" : "none";
   newDaySection(date, 1, 1);
-  if (d.trend) renderTrend(currentTrendEl, d.trend);
+  if (d.trend) renderTrend(date, d.trend);
   (d.papers || []).forEach(p => {
     makeCard({ ...p, date });
     fillCard(p.short_id, p);
   });
   applyGrouping();
+  updateResultsHead();
   log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
   if (running) log("提示：后台仍在运行，点上方「查看进度」可返回实时进度。");
 }
