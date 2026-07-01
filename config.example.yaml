@@ -81,7 +81,7 @@ max_authors_shown: 6
 # 关掉则只用摘要总结（更快、更省 token）。注意：相关性「打分」始终只用摘要，全文仅用于总结。
 summarize_fulltext: true
 # 全文喂给 LLM 前截断到多少字符（越大越完整但越耗 token；一篇论文正文常 4-6 万字符）
-fulltext_max_chars: 48000
+fulltext_max_chars: 100000
 
 # 是否在每份日报顶部生成「今日趋势综述」：综观当天入选论文，给出整体趋势 + 编辑精选 3-5 篇。
 # 用「总结模型」生成，每天仅额外 1 次 LLM 调用；展示在 仪表盘 / 邮件 / markdown 顶部。
@@ -89,8 +89,7 @@ trend_summary: true
 
 # ---- LLM 设置 ----
 # 可用模型(SJTU 交我算 API)调用名 / 上下文长度：
-#   glm-5.1            GLM-5.1                 128k  (强；直接返回内容，适合批量打分=默认筛选模型)
-#   minimax-m2.7       MiniMax-M2.7            192k  (强；思考模型，总结质量高=默认总结模型，需较大 max_tokens)
+#   minimax-m2.7       MiniMax-M2.7            192k  (强；思考模型，质量高=默认筛选/总结模型，需较大 max_tokens)
 #   deepseek-chat      DeepSeek V3.2 常规模式   32k
 #   deepseek-reasoner  DeepSeek V3.2 思考模式   32k  (不接受 temperature)
 #   qwen3.5-27b        Qwen3.5-27B            256k  (最快，备选筛选模型)
@@ -99,8 +98,8 @@ llm:
   base_url: https://models.sjtu.edu.cn/api/v1
   # 推荐用环境变量 AI_HELP_ALL_API_KEY，留空则读环境变量（不要把真实 key 写进会上传 git 的文件！）
   api_key: ""
-  # 筛选用模型（批量结构化打分，glm 直接返回 JSON、稳定）
-  filter_model: glm-5.1
+  # 筛选用模型（批量结构化打分，返回 JSON 数组；minimax 为思考模型，filter_max_tokens 需留足）
+  filter_model: minimax-m2.7
   # 总结用模型（minimax 总结质量高；它是思考模型，下面 summarize_max_tokens 需留足）
   summarize_model: minimax-m2.7
   # 请求数限速（申请额度：每分钟 10 次，留 1 余量）
@@ -118,7 +117,7 @@ llm:
   # 筛选时每篇摘要截断到多少字符（够覆盖绝大多数摘要；调大更全但更耗 token）
   filter_abstract_chars: 1200
   # 单次请求最大输出 token（思考模型如 minimax 会先用 token 推理，需留足余量）
-  filter_max_tokens: 2048
+  filter_max_tokens: 8192
   # 总结要产出 多段深度解读 + 摘要翻译 + 作者单位（思考模型还会先消耗 token 推理），故留足余量
   summarize_max_tokens: 8192
   # 趋势综述（每天 1 次）的最大输出 token（思考模型需留足推理余量）

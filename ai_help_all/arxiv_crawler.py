@@ -1,6 +1,7 @@
 """arxiv 爬取：按"分界小时对齐的自然日"窗口拉取论文。"""
 from __future__ import annotations
 
+import random
 import time as _time
 from dataclasses import dataclass, field
 from datetime import date as date_cls
@@ -164,7 +165,10 @@ def fetch_recent_papers(
     client = arxiv.Client(
         page_size=cfg.page_size,
         delay_seconds=cfg.request_delay_seconds,
-        num_retries=cfg.fetch_retries,
+        # 关键：库内重试设为 0，把重试统一交给下面的外层循环做「带退避」的整次重试。
+        # 否则 arxiv 库会以仅 ~delay_seconds 的间隔、无任何退避地连发请求，与外层重试相乘，
+        # 反而把临时的 503(过载) 不断刷成持续的 429(按 IP 限速)。
+        num_retries=0,
     )
 
     attempts = max(1, cfg.fetch_retries)
@@ -191,15 +195,32 @@ def fetch_recent_papers(
             return papers
         except Exception as e:  # noqa: BLE001 - 抓取无副作用，整次重试
             last_err = e
-            is_429 = "429" in str(e)
+            status = getattr(e, "status", None)  # arxiv.HTTPError 带 .status
+            is_429 = status == 429 or "429" in str(e)
+            is_503 = status == 503 or "503" in str(e)
             if attempt == attempts - 1:
                 break
-            wait = min((30 if is_429 else 10) * (attempt + 1), 120)
+            # 指数退避 + 抖动：被限速(429)需要更久的冷却，503(过载)其次，
+            # 其余(空页/连接抖动)快速重试即可。抖动避免多天/多进程同步重试再次撞限速。
+            base = 60 if is_429 else (30 if is_503 else 5)
+            wait = min(base * (2 ** attempt), 300)
+            wait += random.uniform(0, wait * 0.25)
             if notify:
-                reason = "arxiv 限流(HTTP 429)" if is_429 else f"抓取出错({e})"
-                notify(f"{reason}，{wait}s 后重试（第 {attempt + 1}/{attempts} 次）…")
+                if is_429:
+                    reason = "arxiv 限流(HTTP 429，按出口 IP 限速)"
+                elif is_503:
+                    reason = "arxiv 暂时不可用(HTTP 503，服务端过载)"
+                else:
+                    reason = f"抓取出错({e})"
+                notify(f"{reason}，{wait:.0f}s 后重试（第 {attempt + 1}/{attempts} 次）…")
             _time.sleep(wait)
 
-    hint = "arxiv 限流(HTTP 429)，多次重试仍失败，请稍后再试（或减少天数/分类）" \
-        if last_err and "429" in str(last_err) else f"arxiv 抓取失败: {last_err}"
+    if last_err and (getattr(last_err, "status", None) == 429 or "429" in str(last_err)):
+        hint = ("arxiv 限流(HTTP 429)多次重试仍失败：当前出口 IP 被 arxiv 按 IP 限速。"
+                "请等待几分钟让限速自然解除后再试；并可调小 arxiv.max_results/分类数、"
+                "调大 arxiv.request_delay_seconds，必要时关闭 summarize_fulltext/fetch_affiliations 以减少对 arxiv 的请求。")
+    elif last_err and (getattr(last_err, "status", None) == 503 or "503" in str(last_err)):
+        hint = "arxiv 暂时不可用(HTTP 503)多次重试仍失败：arxiv 服务端过载，请稍后再试。"
+    else:
+        hint = f"arxiv 抓取失败: {last_err}"
     raise RuntimeError(hint)

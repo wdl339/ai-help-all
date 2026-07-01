@@ -122,15 +122,14 @@ API 详情与申请方式见：https://claw.sjtu.edu.cn/guide/sjtu-api/
 
 | 调用名 | 模型 | 上下文 | 侧重 |
 |---|---|---|---|
-| `glm-5.1` | GLM-5.1 | 128k | 强；直接返回内容，适合批量结构化打分（**默认筛选模型**） |
-| `minimax-m2.7` | MiniMax-M2.7 | 192k | 强；**思考模型**，总结质量高（**默认总结模型**，需较大 `max_tokens`） |
+| `minimax-m2.7` | MiniMax-M2.7 | 192k | 强；**思考模型**，质量高（**默认筛选/总结模型**，需较大 `max_tokens`） |
 | `deepseek-chat` | DeepSeek V3.2 常规 | 32k | 通用文本 |
 | `deepseek-reasoner` | DeepSeek V3.2 思考 | 32k | 复杂推理（**不接受 temperature**） |
 | `qwen3.5-27b` | Qwen3.5-27B | 256k | 最快、上下文最大，备选筛选模型 |
 
 > 用 `python main.py --list-models` 可查看 api-key 实际可调用的模型 id。
 >
-> **思考模型**（`minimax-m2.7` / `deepseek-reasoner`）会先花 token 做内部推理再输出。用于**批量筛选**这类长 prompt 任务时，`max_tokens` 不够会被推理吃光、返回空——故筛选默认用更快、直接出内容的 `glm-5.1`，总结才用 `minimax-m2.7`。
+> **思考模型**（`minimax-m2.7` / `deepseek-reasoner`）会先花 token 做内部推理再输出。用于**批量筛选**这类长 prompt 任务时，`max_tokens` 不够会被推理吃光、返回空——故筛选用 `minimax-m2.7` 时务必把 `filter_max_tokens` 留足（默认 8192），单批论文过多时可适当调小 `filter_batch_size`。
 
 ### 并发与速率限制
 

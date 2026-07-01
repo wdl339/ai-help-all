@@ -36,8 +36,8 @@ class ArxivConfig:
 class LLMConfig:
     base_url: str = "https://models.sjtu.edu.cn/api/v1"
     api_key: str = ""
-    # 筛选模型：glm-5.1 直接返回 JSON、稳定可靠，适合批量结构化打分
-    filter_model: str = "glm-5.1"
+    # 筛选模型：minimax-m2.7 做批量结构化打分（返回 JSON 数组）；思考模型，filter_max_tokens 需留足
+    filter_model: str = "minimax-m2.7"
     # 总结模型：minimax-m2.7 总结质量高（注意它是思考模型，需较大 max_tokens）
     summarize_model: str = "minimax-m2.7"
     # 速率限制（申请额度：每分钟 10 次请求，留 1 余量）
@@ -55,7 +55,7 @@ class LLMConfig:
     # 筛选时每篇摘要截断到多少字符（控制单次请求 token；够覆盖绝大多数摘要）
     filter_abstract_chars: int = 1200
     # 单次请求的最大输出 token（思考模型会先消耗 token 做推理，需留足余量）
-    filter_max_tokens: int = 2048
+    filter_max_tokens: int = 8192
     # 总结要产出 多段深度解读 + 摘要翻译 + 作者单位（思考模型还会先消耗 token 推理），故留足余量
     summarize_max_tokens: int = 8192
     # 趋势综述的最大输出 token（思考模型需留足推理余量）
@@ -101,7 +101,7 @@ class Config:
     # 注意：打分(筛选)始终只用摘要，全文仅用于「总结」阶段。
     summarize_fulltext: bool = True
     # 全文喂给 LLM 前截断到多少字符（越大越完整但越耗 token）
-    fulltext_max_chars: int = 48000
+    fulltext_max_chars: int = 100000
     # 是否在每份日报顶部生成「今日趋势综述」（综观当天入选论文，额外 1 次 LLM 调用/天）
     trend_summary: bool = True
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -152,7 +152,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         affiliation_pdf_chars=int(raw.get("affiliation_pdf_chars", 1800)),
         max_authors_shown=int(raw.get("max_authors_shown", 6)),
         summarize_fulltext=bool(raw.get("summarize_fulltext", True)),
-        fulltext_max_chars=int(raw.get("fulltext_max_chars", 48000)),
+        fulltext_max_chars=int(raw.get("fulltext_max_chars", 100000)),
         trend_summary=bool(raw.get("trend_summary", True)),
         llm=llm,
         push=push,
