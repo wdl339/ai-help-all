@@ -1,8 +1,9 @@
 """LLM 客户端：封装 OpenAI 兼容接口，内置每分钟请求数 + token 双限速。
 
 参考 SJTU 交我算 API 文档 https://claw.sjtu.edu.cn/guide/sjtu-api/ 的约束：
+- base_url: https://models.sjtu.edu.cn/api/v1（OpenAI 兼容端点 /chat/completions）；
 - 额度：每分钟 10 次请求、每分钟 100000 token、每周 10 亿 token；
-- V3.2(deepseek-chat / deepseek-reasoner) 请求中必须包含 user 角色消息；
+- DeepSeek(deepseek-chat / deepseek-reasoner，V4 Flash) 请求中必须包含 user 角色消息；
 - deepseek-reasoner 为深度思考模式，不接受 temperature 等采样参数，
   且返回中带有独立的 reasoning_content 字段（真正答案仍在 content）。
 """

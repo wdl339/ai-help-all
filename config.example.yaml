@@ -89,10 +89,11 @@ trend_summary: true
 
 # ---- LLM 设置 ----
 # 可用模型(SJTU 交我算 API)调用名 / 上下文长度：
-#   minimax-m2.7       MiniMax-M2.7            192k  (强；思考模型，质量高=默认筛选/总结模型，需较大 max_tokens)
-#   deepseek-chat      DeepSeek V3.2 常规模式   32k
-#   deepseek-reasoner  DeepSeek V3.2 思考模式   32k  (不接受 temperature)
-#   qwen3.5-27b        Qwen3.5-27B            256k  (最快，备选筛选模型)
+#   minimax-m2.7       MiniMax-M2.7 (230B)         192k  (别名 minimax；强；思考模型，质量高=默认筛选/总结模型，需较大 max_tokens)
+#   deepseek-chat      DeepSeek V4 Flash 常规模式   256k  (284B，通用文本)
+#   deepseek-reasoner  DeepSeek V4 Flash 思考模式   256k  (284B，深度推理；不接受 temperature)
+#   qwen3.6-27b        Qwen3.6-27B                256k  (别名 qwen；多模态；最快，备选筛选模型)
+# base_url: https://models.sjtu.edu.cn/api/v1
 # 可用 `python main.py --list-models` 校验密钥并查看实际可用模型。
 llm:
   base_url: https://models.sjtu.edu.cn/api/v1
