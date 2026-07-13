@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections import deque
@@ -16,6 +17,26 @@ from collections import deque
 from openai import APITimeoutError, OpenAI
 
 from .config import LLMConfig
+
+_THINK_CLOSE = "</think>"
+
+
+def strip_reasoning(text: str) -> str:
+    """剥掉思考模型(如 minimax-m2.7)写进 content 的 <think>...</think> 推理块。
+
+    这类模型不把推理放进独立的 reasoning_content，而是内联进 content，真正答案
+    在 </think> 之后。推理块里常含 [0]/{...} 等括号，会污染下游 JSON/分节解析，
+    故在此统一剥除。若只有 <think> 而无闭合(通常是被 max_tokens 截断)，视为无有效
+    输出，返回空串。
+    """
+    if not text:
+        return text
+    if _THINK_CLOSE in text:
+        # 取最后一个 </think> 之后的内容
+        return text.split(_THINK_CLOSE)[-1].strip()
+    if re.match(r"\s*<think>", text):
+        return ""
+    return text.strip()
 
 
 def estimate_tokens(text: str) -> int:
@@ -165,7 +186,7 @@ class LLMClient:
                 resp = self.client.chat.completions.create(**params)
                 content = resp.choices[0].message.content or ""
                 self._track_usage(model, resp)
-                return content.strip()
+                return strip_reasoning(content)
             except APITimeoutError as e:
                 last_err = e
                 wait = min(2 ** attempt * 3, 20)
