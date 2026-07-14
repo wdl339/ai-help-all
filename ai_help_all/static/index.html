@@ -48,6 +48,8 @@
   select { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
   input[type=date], input[type=number] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-size: 13px; }
   input[type=number] { width: 50px; }
+  .searchbar input[type=search] { flex: 1; min-width: 240px; background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+  .searchbar input[type=search]:focus { outline: none; border-color: var(--accent); }
   main { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
   .cfg { color: var(--muted); font-size: 12.5px; margin: 0; }
   .cfgbox { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
@@ -140,6 +142,18 @@
       <button id="runBtn">▶ 运行</button>
       <button id="stopBtn" class="ghost" style="display:none">■ 停止</button>
     </div>
+    <div class="controls searchbar" style="margin-top:10px">
+      <input type="search" id="searchQ" placeholder="🔍" />
+      <select id="searchSource" title="搜索范围">
+        <option value="local">仅本地日报</option>
+        <option value="arxiv">仅 arXiv</option>
+        <option value="both">搜本地日报 & arXiv</option>
+      </select>
+      <select id="searchTag" title="按标签过滤（仅本地）"><option value="">全部标签</option></select>
+      <label class="chk" title="仅本地：只看不低于该分数的论文">分数 ≥ <input type="number" id="searchMinScore" min="0" max="10" value="0" style="width:44px" /></label>
+      <button id="searchBtn">搜索</button>
+      <button id="searchClear" class="ghost" style="display:none">✕ 清除</button>
+    </div>
   </div>
   <div class="cfgbox">
     <div class="cfg" id="cfgCats">加载配置中…</div>
@@ -183,6 +197,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+let searchMode = false; // 当前是否在展示搜索结果（区别于运行/历史视图）
 let currentDate = "";   // 历史查看/单天运行对应的日报日期
 let currentDay = "";    // 多天运行时，当前正在处理的那一天
 let currentCardsEl = null;   // 当前天的卡片容器
@@ -683,6 +698,8 @@ function detachStream() {
 // 接入（或重新接入）正在进行的运行：重置界面并回放 + 续看实时
 function attachStream() {
   if (es) { es.close(); es = null; }
+  searchMode = false;
+  $("searchClear").style.display = "none";
   resetUI();
   lastSeq = -1; attached = true;
   updateBtn(); maybePoll();
@@ -721,6 +738,12 @@ async function loadConfig() {
     boundaryHour = c.day_boundary_hour ?? 8;
     tzOffset = c.tz_offset_hours ?? 8;
     TAGS = c.tags || [];
+    // 搜索的标签过滤下拉（仅本地）
+    const tagSel = $("searchTag");
+    if (tagSel) {
+      tagSel.innerHTML = '<option value="">全部标签</option>' +
+        TAGS.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+    }
     // 日期/天数控件默认值
     if (c.today && !$("runDate").value) { $("runDate").value = c.today; currentDate = c.today; }
     if (c.days_back && !$("runDaysBack").value) $("runDaysBack").value = c.days_back;
@@ -775,6 +798,8 @@ async function loadHistory() {
 async function showHistory(date) {
   if (!date) return;
   currentDate = date;
+  searchMode = false;
+  $("searchClear").style.display = "none";
   detachStream();   // 切去看历史时只断开本页进度流，后台运行继续
   resetUI();
   $("stages").style.display = "none";   // 查看历史时不显示运行进度灯那一行
@@ -817,6 +842,106 @@ async function emailDigest() {
   setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
 }
 
+// arxiv 实时结果卡片：无分数/总结的轻量卡（不收录，故不带「生成总结」按钮）
+function makeArxivCard(p, container) {
+  const el = document.createElement("div");
+  el.className = "card";
+  const authors = (p.authors || []).slice(0, 6).join(", ") + ((p.authors||[]).length > 6 ? " 等" : "");
+  const comment = (p.comment || "").trim();
+  const journal = (p.journal_ref || "").trim();
+  const commentRow = comment ? `<div class="meta cmt">备注：${escapeHtml(comment)}</div>` : "";
+  const journalRow = journal ? `<div class="meta" style="color:var(--green)">发表于：${escapeHtml(journal)}</div>` : "";
+  const doiLink = p.doi ? ` · <a href="${doiUrl(p.doi)}" target="_blank">DOI</a>` : "";
+  const pub = (p.published || "").slice(0, 10);
+  el.innerHTML = `
+    <div class="top">
+      <h3 class="title">${escapeHtml(p.title)}</h3>
+    </div>
+    <div class="meta">作者：${escapeHtml(authors)}${pub ? " · " + pub : ""}</div>
+    ${commentRow}${journalRow}
+    <div class="meta">${catsLabel(p)} ·
+      <a href="${p.entry_url}" target="_blank">摘要页</a> ·
+      <a href="${p.pdf_url}" target="_blank">PDF</a>${doiLink}</div>
+    <details class="abs">
+      <summary class="abs-sum">原始摘要</summary>
+      <div class="abs-en"><b>Abstract (EN)</b>: ${escapeHtml(p.abstract || "")}</div>
+    </details>`;
+  container.appendChild(el);
+}
+
+function renderSearchResults(q, data) {
+  resetUI();
+  searchMode = true;
+  $("stages").style.display = "none";      // 搜索视图不显示运行进度灯
+  $("resultsHead").style.display = "none"; // 也不显示分组控件
+  $("searchClear").style.display = "";
+  const local = data.local || [];
+  const arx = data.arxiv || [];
+  const head = document.createElement("div");
+  head.className = "day-header";
+  const arxNote = arx.length ? ` · 🌐 arXiv ${arx.length} 篇` : "";
+  head.innerHTML = `🔍 搜索「${escapeHtml(q)}」 <span class="sub">本地 ${local.length} 篇${arxNote}</span>`;
+  $("results").appendChild(head);
+
+  if (!local.length && !arx.length) {
+    const extra = data.arxiv_error ? "<br>" + escapeHtml(data.arxiv_error) : "";
+    $("results").insertAdjacentHTML("beforeend",
+      `<div class="empty">没有找到匹配的论文。${extra}</div>`);
+    return;
+  }
+  if (local.length) {
+    newDaySection("", 1, 1);   // 设置 currentCardsEl，本地卡片复用 makeCard/fillCard
+    local.forEach(p => { makeCard(p); fillCard(p.short_id, p); });
+  }
+  if (arx.length) {
+    const h = document.createElement("div");
+    h.className = "day-header";
+    h.style.borderLeftColor = "var(--accent2)";
+    h.innerHTML = `🌐 arXiv 实时结果 <span class="sub">未收录·未打分（按相关性排序）</span>`;
+    $("results").appendChild(h);
+    const sec = document.createElement("div"); sec.className = "day-section";
+    const cardsEl = document.createElement("div"); cardsEl.className = "day-cards";
+    sec.appendChild(cardsEl); $("results").appendChild(sec);
+    arx.forEach(p => makeArxivCard(p, cardsEl));
+  }
+  if (data.arxiv_error) log(data.arxiv_error, true);
+}
+
+async function runSearch() {
+  const q = $("searchQ").value.trim();
+  if (!q) { $("searchQ").focus(); return; }
+  detachStream();   // 断开本页进度流（后台运行继续），进入搜索视图
+  resetUI();
+  searchMode = true;
+  $("stages").style.display = "none";
+  $("resultsHead").style.display = "none";
+  $("results").innerHTML = `<div class="empty"><span class="spinner"></span>搜索中…</div>`;
+  const btn = $("searchBtn"); const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "搜索中…";
+  const source = $("searchSource").value;
+  const tag = $("searchTag").value;
+  const minScore = parseInt($("searchMinScore").value) || 0;
+  try {
+    const qs = `q=${encodeURIComponent(q)}&source=${source}&tag=${encodeURIComponent(tag)}&min_score=${minScore}`;
+    const r = await (await fetch(`/api/search?${qs}`)).json();
+    if (r.error) { $("results").innerHTML = `<div class="empty">${escapeHtml(r.error)}</div>`; return; }
+    renderSearchResults(q, r);
+  } catch (e) {
+    $("results").innerHTML = `<div class="empty">搜索请求失败，请稍后重试。</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+function clearSearch() {
+  searchMode = false;
+  $("searchQ").value = "";
+  $("searchClear").style.display = "none";
+  if (running) { attachStream(); return; }   // 后台在运行则回到实时进度
+  resetUI();
+  log("已清除搜索，点上方「运行」开始，或从「历史日报」查看归档。");
+}
+
 // 页面加载时若后台正在运行，自动接回进度，并回填正在运行的日期/天数
 async function initStatus() {
   try {
@@ -836,6 +961,9 @@ async function initStatus() {
 
 $("runBtn").addEventListener("click", onRunClick);
 $("stopBtn").addEventListener("click", onStopClick);
+$("searchBtn").addEventListener("click", runSearch);
+$("searchClear").addEventListener("click", clearSearch);
+$("searchQ").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
 $("history").addEventListener("change", (e) => showHistory(e.target.value));
 $("emailDigestBtn").addEventListener("click", emailDigest);
 $("runDate").addEventListener("change", updateWinHint);

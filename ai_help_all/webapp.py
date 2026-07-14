@@ -15,10 +15,11 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import arxiv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from .arxiv_crawler import Paper
+from .arxiv_crawler import Paper, _to_paper
 from .config import load_config
 from .llm_client import LLMClient
 from .pipeline import run_pipeline
@@ -207,6 +208,70 @@ def _paper_from_dict(d: dict) -> Paper:
     )
 
 
+def _search_local(terms: list[str], min_score: int, tag: str, limit: int) -> list[dict]:
+    """在已归档日报(digests/*.json)里做关键词检索。
+
+    terms 全部命中(AND)才算匹配；匹配范围含标题/摘要(中英)/总结/理由/标签/作者/分类/编号。
+    同一论文可能出现在多天日报里，按编号去重、保留分数最高的一条；按分数降序返回(截断到 limit)。
+    """
+    best: dict[str, dict] = {}
+    for f in sorted(_DIGESTS_DIR.glob("digest-*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        date = data.get("date", "")
+        for p in data.get("papers", []):
+            sid = p.get("short_id") or p.get("arxiv_id")
+            if not sid:
+                continue
+            score = int(p.get("score", 0) or 0)
+            if score < min_score or (tag and p.get("tag") != tag):
+                continue
+            hay = " ".join([
+                str(p.get("title", "")), str(p.get("abstract", "")),
+                str(p.get("abstract_zh", "")), str(p.get("summary", "")),
+                str(p.get("reason", "")), str(p.get("tag", "")),
+                " ".join(p.get("authors", []) or []),
+                " ".join(p.get("categories", []) or []), str(sid),
+            ]).lower()
+            if not all(t in hay for t in terms):
+                continue
+            prev = best.get(sid)
+            if prev is None or score > int(prev.get("score", 0) or 0):
+                best[sid] = {**p, "date": date}
+    out = sorted(best.values(), key=lambda x: int(x.get("score", 0) or 0), reverse=True)
+    return out[:limit]
+
+
+def _build_arxiv_query(query: str) -> str:
+    """把用户输入拼成 arxiv 查询：已含字段前缀/布尔词则原样用；否则各词以 all: 做 AND，
+    收紧相关性（默认按空格拆分时 arxiv 可能宽松匹配，导致返回离题结果）。"""
+    q = query.strip()
+    if any(k in q for k in (":", " AND ", " OR ", " ANDNOT ", '"')):
+        return q
+    terms = q.split()
+    return " AND ".join(f"all:{t}" for t in terms) if terms else q
+
+
+def _search_arxiv(query: str, max_results: int, exclude: set[str]) -> list[dict]:
+    """去 arxiv 实时检索(按相关性)，转成与日报同构的论文 dict；排除已在本地命中的编号。"""
+    client = arxiv.Client(page_size=min(max(max_results, 1), 100),
+                          delay_seconds=3.0, num_retries=1)
+    search = arxiv.Search(query=_build_arxiv_query(query), max_results=max_results,
+                          sort_by=arxiv.SortCriterion.Relevance)
+    out: list[dict] = []
+    for result in client.results(search):
+        p = _to_paper(result)
+        if p.short_id in exclude:
+            continue
+        d = p.to_dict()
+        d["date"] = ""
+        d["is_arxiv"] = True
+        out.append(d)
+    return out
+
+
 def create_app(config_path: str = "config.yaml") -> FastAPI:
     app = FastAPI(title="ai-help-all dashboard")
     manager = RunManager()
@@ -260,6 +325,38 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
         if not path.exists():
             return JSONResponse({"error": "not found"}, status_code=404)
         return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+
+    @app.get("/api/search")
+    def search(q: str = "", source: str = "both", min_score: int = 0,
+               tag: str = "", limit: int = 80) -> JSONResponse:
+        """论文搜索：先在本地已归档日报里搜，source=both 时若本地无结果再兜底查 arxiv。
+
+        - source: local(仅本地) / arxiv(仅 arxiv) / both(本地优先，空则查 arxiv)
+        - min_score / tag: 仅作用于本地结果的过滤
+        """
+        q = (q or "").strip()
+        if not q:
+            return JSONResponse({"error": "请输入搜索关键词"}, status_code=400)
+        terms = [t for t in q.lower().split() if t]
+
+        local: list[dict] = []
+        if source in ("local", "both"):
+            local = _search_local(terms, min_score, tag, limit)
+
+        arxiv_results: list[dict] = []
+        arxiv_error = ""
+        want_arxiv = source == "arxiv" or (source == "both" and not local)
+        if want_arxiv:
+            seen = {p.get("short_id") or p.get("arxiv_id") for p in local}
+            try:
+                arxiv_results = _search_arxiv(q, min(limit, 30), seen)
+            except Exception as e:  # noqa: BLE001 - arxiv 失败不影响本地结果
+                arxiv_error = f"arXiv 搜索失败: {e}"
+
+        return JSONResponse({
+            "query": q, "source": source,
+            "local": local, "arxiv": arxiv_results, "arxiv_error": arxiv_error,
+        })
 
     @app.get("/api/email_digest")
     def email_digest(date: str = "") -> JSONResponse:
