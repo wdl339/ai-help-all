@@ -33,6 +33,18 @@
   header h1 { font-size: 18px; margin: 0; line-height: 1.15; }
   header h1 .em { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
   header .tagline { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+  .page-tabs { display: flex; align-self: stretch; align-items: stretch; margin-left: 10px; gap: 20px; }
+  button.page-tab {
+    position: relative; background: transparent; color: var(--muted); border: 0; border-radius: 0;
+    padding: 0 2px; font-size: 14px; font-weight: 650;
+  }
+  button.page-tab::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -16px; height: 2px;
+    background: transparent;
+  }
+  button.page-tab:hover { color: var(--fg); }
+  button.page-tab.active { color: var(--accent); }
+  button.page-tab.active::after { background: var(--accent); }
   .grow { flex: 1; }
   .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .toolbar { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
@@ -48,9 +60,11 @@
   select { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
   input[type=date], input[type=number] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font-size: 13px; }
   input[type=number] { width: 50px; }
-  .searchbar input[type=search] { flex: 1; min-width: 240px; background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
-  .searchbar input[type=search]:focus { outline: none; border-color: var(--accent); }
-  main { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
+  input[type=search] { background: var(--panel2); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+  input[type=search]:focus { outline: none; border-color: var(--accent); }
+  .searchbar input[type=search] { flex: 1; min-width: 240px; }
+  main { padding: 20px 24px; max-width: 1180px; margin: 0 auto; }
+  .page-view[hidden] { display: none; }
   .cfg { color: var(--muted); font-size: 12.5px; margin: 0; }
   .cfgbox { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
   .cfg b { color: var(--fg); }
@@ -117,7 +131,67 @@
   .trend-obs { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
   .card .meta.cmt { color: var(--muted); }
   .empty { color: var(--muted); text-align: center; padding: 30px; }
+  .history-page-head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 2px 0 18px;
+  }
+  .history-page-head h2 { margin: 0; font-size: 20px; line-height: 1.3; }
+  .history-page-head .meta { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .history-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 24px; align-items: start; }
+  .history-sidebar {
+    position: sticky; top: 93px; max-height: calc(100vh - 113px);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; display: flex; flex-direction: column; min-height: 280px;
+  }
+  .history-filter { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .history-filter label {
+    display: block; color: var(--muted); font-size: 12px; font-weight: 650; margin-bottom: 6px;
+  }
+  .history-filter input { width: 100%; }
+  .history-list { overflow-y: auto; padding: 8px 2px 2px 0; scrollbar-gutter: stable; }
+  .history-month + .history-month { margin-top: 12px; }
+  .history-month-title {
+    color: var(--muted); font-size: 11.5px; font-weight: 700; padding: 2px 8px 5px;
+  }
+  button.history-date {
+    width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+    gap: 8px; background: transparent; color: var(--fg); border: 1px solid transparent;
+    border-radius: 6px; padding: 7px 8px; font-size: 13px; font-weight: 550; text-align: left;
+  }
+  button.history-date:hover { background: var(--panel2); }
+  button.history-date.active { background: #eaf1ff; border-color: #c9d9fa; color: var(--accent); }
+  .history-date-count { color: var(--muted); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+  button.history-date.active .history-date-count { color: var(--accent); }
+  .history-main { min-width: 0; }
+  .history-empty {
+    min-height: 280px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  }
+  .history-content-head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+    padding: 0 0 14px; margin-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+  .history-content-head h2 { margin: 1px 0 0; font-size: 19px; }
+  .history-eyebrow { color: var(--accent); font-size: 11.5px; font-weight: 750; }
+  .history-content-meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .history-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .history-actions .group-label { color: var(--muted); font-size: 12.5px; }
+  .history-list-empty { color: var(--muted); font-size: 12.5px; text-align: center; padding: 24px 8px; }
   .hidden { display: none; }
+  @media (max-width: 760px) {
+    header { padding: 12px 16px; gap: 10px; }
+    .brand { flex: 1 1 auto; }
+    .page-tabs { order: 2; width: 100%; height: 36px; margin-left: 0; gap: 26px; }
+    button.page-tab::after { bottom: -12px; }
+    main { padding: 16px; }
+    .toolbar { padding: 10px; }
+    .controls { gap: 8px; }
+    .searchbar input[type=search] { min-width: 100%; }
+    .history-layout { grid-template-columns: 1fr; gap: 16px; }
+    .history-sidebar { position: static; max-height: none; min-height: 0; }
+    .history-list { max-height: 230px; }
+    .history-content-head { align-items: flex-start; flex-direction: column; }
+    .history-actions { justify-content: flex-start; }
+  }
 </style>
 </head>
 <body>
@@ -128,11 +202,15 @@
       <h1><span class="em">AI helps all</span> 论文日报</h1>
     </div>
   </div>
+  <nav class="page-tabs" aria-label="页面">
+    <button id="homeTab" class="page-tab active" type="button" aria-selected="true">主页</button>
+    <button id="historyTab" class="page-tab" type="button" aria-selected="false">历史</button>
+  </nav>
 </header>
 <main>
+<section id="homeView" class="page-view">
   <div class="toolbar">
     <div class="controls">
-      <select id="history" title="查看历史日报"><option value="">历史日报…</option></select>
       <label class="chk" title="参考日期（默认今天）；窗口截止于该日期的分界点">日期 <input type="date" id="runDate" /></label>
       <label class="chk" title="从选定日期往前 N 天（窗口 = 选定日期分界点 往前 N 天）">天数 <input type="number" id="runDaysBack" min="1" max="14" /></label>
       <label class="chk"><input type="checkbox" id="dryrun" /> 仅爬取</label>
@@ -193,10 +271,53 @@
     <button id="emailDigestBtn" class="btn-email" title="把当前查看的这天日报按邮件格式发送（需先配好 push.email）" style="margin-left:auto;display:none">✉ 发送邮件</button>
   </div>
   <div id="results"></div>
+</section>
+
+<section id="historyView" class="page-view" hidden>
+  <div class="history-page-head">
+    <div>
+      <h2>历史日报</h2>
+      <div class="meta" id="historySummary">加载中…</div>
+    </div>
+  </div>
+  <div class="history-layout">
+    <aside class="history-sidebar">
+      <div class="history-filter">
+        <label for="historyFilter">归档日期</label>
+        <input type="search" id="historyFilter" placeholder="搜索日期" autocomplete="off" />
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </aside>
+    <div class="history-main">
+      <div class="history-empty" id="historyEmpty">选择一份日报</div>
+      <div id="historyContent" class="hidden">
+        <div class="history-content-head">
+          <div>
+            <div class="history-eyebrow">论文日报</div>
+            <h2 id="historyTitle"></h2>
+            <div class="history-content-meta" id="historyMeta"></div>
+          </div>
+          <div class="history-actions">
+            <span class="group-label">分组</span>
+            <select id="historySortMode">
+              <option value="score">按分数</option>
+              <option value="tag">按标签</option>
+              <option value="summarized">按是否总结</option>
+            </select>
+            <button id="historyEmailBtn" class="btn-email" title="把当前日报按邮件格式发送">✉ 发送邮件</button>
+          </div>
+        </div>
+        <div id="historyTrendArea"></div>
+        <div id="historyResults"></div>
+      </div>
+    </div>
+  </div>
+</section>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
+let currentPage = "home";
 let searchMode = false; // 当前是否在展示搜索结果（区别于运行/历史视图）
 let currentDate = "";   // 历史查看/单天运行对应的日报日期
 let currentDay = "";    // 多天运行时，当前正在处理的那一天
@@ -204,6 +325,22 @@ let currentCardsEl = null;   // 当前天的卡片容器
 let boundaryHour = 8, tzOffset = 8;   // 来自配置：分界小时 / 时区偏移
 let TAGS = [];               // 配置里的标签顺序
 let collapsed = {};          // 记住各分组的折叠状态：composite key -> true(已折叠)
+let historyDigests = [];
+let historyLoaded = false;
+let selectedHistoryDate = "";
+let historyRequestId = 0;
+let homeCards = {};
+let historyCards = {};
+
+function resultsRoot() {
+  return currentPage === "history" ? $("historyResults") : $("results");
+}
+function trendRoot() {
+  return currentPage === "history" ? $("historyTrendArea") : $("trendArea");
+}
+function sortControl() {
+  return currentPage === "history" ? $("historySortMode") : $("sortMode");
+}
 
 // 新建一个"天"的分区（含可选标题 + 卡片容器），返回卡片容器
 function newDaySection(date, index, total) {
@@ -219,14 +356,14 @@ function newDaySection(date, index, total) {
   const cardsEl = document.createElement("div");
   cardsEl.className = "day-cards";
   sec.appendChild(cardsEl);
-  $("results").appendChild(sec);
+  resultsRoot().appendChild(sec);
   currentCardsEl = cardsEl;
   return cardsEl;
 }
 
-// 今日速览统一渲染到 #trendArea（运行日志之下、入选论文之上），可折叠；多天各一份
+// 今日速览统一渲染到当前页面的速览区，可折叠；多天各一份
 function trendSlot(date) {
-  const area = $("trendArea");
+  const area = trendRoot();
   const key = date || "";
   let det = Array.from(area.children).find(d => d.dataset && d.dataset.trendDate === key);
   if (!det) {
@@ -242,7 +379,7 @@ function trendSlot(date) {
 
 // 多天时给每张速览标题补上日期以区分；单天则只显示「今日速览」
 function relabelTrends() {
-  const slots = $("trendArea").querySelectorAll("details.trend-card");
+  const slots = trendRoot().querySelectorAll("details.trend-card");
   const multi = slots.length > 1;
   slots.forEach(det => {
     const sm = det.querySelector("summary.trend-head");
@@ -316,8 +453,9 @@ function orderKeys(mode, keys) {
 
 // 按当前模式把每个"天"分区内的卡片重组为可折叠分组（保留卡片 DOM 与已填内容）
 function applyGrouping() {
-  const mode = $("sortMode") ? $("sortMode").value : "score";
-  document.querySelectorAll(".day-section").forEach(sec => {
+  const ctl = sortControl();
+  const mode = ctl ? ctl.value : "score";
+  resultsRoot().querySelectorAll(".day-section").forEach(sec => {
     const cardsEl = sec.querySelector(".day-cards");
     if (!cardsEl) return;
     const date = sec.dataset.date || "";
@@ -353,7 +491,7 @@ const STAGES = [
   ["crawl", "爬取 arxiv"], ["dedup", "去重"], ["filter", "相关性筛选"],
   ["summarize", "生成总结"], ["trend", "趋势综述"], ["push", "归档推送"],
 ];
-let cards = {}; // short_id -> {el, summaryEl}
+let cards = homeCards; // 当前页面的 short_id -> {el, summaryEl}
 
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -428,7 +566,7 @@ function makeCard(p) {
   el.dataset.score = p.score;
   el.dataset.tag = tag;
   el.dataset.summarized = summaryState(p) === "ok" ? "1" : "0";
-  (currentCardsEl || $("results")).appendChild(el);
+  (currentCardsEl || resultsRoot()).appendChild(el);
   cards[p.short_id] = {
     el,
     summaryEl: el.querySelector(".summary"),
@@ -524,7 +662,8 @@ async function retrySummary(short_id) {
 }
 
 function resetUI() {
-  cards = {};
+  homeCards = {};
+  cards = homeCards;
   currentDay = "";
   currentCardsEl = null;
   $("trendArea").innerHTML = "";
@@ -543,8 +682,20 @@ function resetUI() {
   initStages();
 }
 
+function resetHistoryUI(message = "选择一份日报") {
+  historyCards = {};
+  cards = historyCards;
+  currentCardsEl = null;
+  $("historyTrendArea").innerHTML = "";
+  $("historyResults").innerHTML = "";
+  $("historyContent").classList.add("hidden");
+  $("historyEmpty").classList.remove("hidden");
+  $("historyEmpty").textContent = message;
+}
+
 // 仅当结果区已有论文卡片时才显示「入选论文 分组」这一行
 function updateResultsHead() {
+  if (currentPage === "history") return;
   const hasCards = $("results").querySelector(".card") != null;
   $("resultsHead").style.display = hasCards ? "flex" : "none";
 }
@@ -639,7 +790,7 @@ function handle(ev) {
       const cost = payload.elapsed != null ? `，用时 ${fmtDuration(payload.elapsed)}` : "";
       if (payload.stopped) log(`⏹ 已停止 共 ${payload.count} 篇${ds}${cost}`, true);
       else log(`完成 ✅ 共 ${payload.count} 篇${ds}${cost}`);
-      loadHistory();   // 刷新历史下拉，纳入本次新生成的日报
+      loadHistory(true);   // 刷新历史索引，纳入本次新生成的日报
       finish();
       break;
     }
@@ -782,61 +933,193 @@ async function loadUsage() {
   } catch {}
 }
 
-async function loadHistory() {
-  try {
-    const h = await (await fetch("/api/history")).json();
-    const sel = $("history");
-    sel.innerHTML = '<option value="">历史日报…</option>';   // 先清空再填，避免重复
-    (h.digests || []).forEach(d => {
-      const o = document.createElement("option");
-      o.value = d.date; o.textContent = `${d.date} (${d.count} 篇)`;
-      sel.appendChild(o);
-    });
-  } catch {}
+function historyMonthLabel(month) {
+  const [year, number] = month.split("-");
+  return `${year} 年 ${parseInt(number, 10)} 月`;
 }
 
-async function showHistory(date) {
-  if (!date) return;
-  currentDate = date;
-  searchMode = false;
-  $("searchClear").style.display = "none";
-  detachStream();   // 切去看历史时只断开本页进度流，后台运行继续
-  resetUI();
-  $("stages").style.display = "none";   // 查看历史时不显示运行进度灯那一行
-  const d = await (await fetch("/api/digest/" + date)).json();
-  if (d.error) { log("加载失败: " + d.error, true); return; }
-  $("emailDigestBtn").style.display = (d.papers && d.papers.length) ? "" : "none";
-  newDaySection(date, 1, 1);
-  if (d.trend) renderTrend(date, d.trend);
-  (d.papers || []).forEach(p => {
-    makeCard({ ...p, date });
-    fillCard(p.short_id, p);
+function markSelectedHistoryDate() {
+  let activeButton = null;
+  $("historyList").querySelectorAll("button.history-date").forEach(btn => {
+    const active = btn.dataset.date === selectedHistoryDate;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-current", active ? "date" : "false");
+    if (active) activeButton = btn;
   });
-  applyGrouping();
-  updateResultsHead();
-  log(`已加载 ${date} 的日报，共 ${(d.papers||[]).length} 篇。`);
-  if (running) log("提示：后台仍在运行，点上方「查看进度」可返回实时进度。");
+  if (activeButton) activeButton.scrollIntoView({ block: "nearest" });
+}
+
+function renderHistoryList(query = "") {
+  const list = $("historyList");
+  const q = query.trim().toLowerCase();
+  const matched = historyDigests.filter(d => (d.date || "").toLowerCase().includes(q));
+  list.innerHTML = "";
+  if (!matched.length) {
+    list.innerHTML = '<div class="history-list-empty">没有匹配的日期</div>';
+    return;
+  }
+
+  const groups = new Map();
+  matched.forEach(d => {
+    const month = (d.date || "").slice(0, 7);
+    if (!groups.has(month)) groups.set(month, []);
+    groups.get(month).push(d);
+  });
+  groups.forEach((items, month) => {
+    const section = document.createElement("div");
+    section.className = "history-month";
+    const title = document.createElement("div");
+    title.className = "history-month-title";
+    title.textContent = historyMonthLabel(month);
+    section.appendChild(title);
+    items.forEach(d => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "history-date";
+      btn.dataset.date = d.date;
+      const dateText = document.createElement("span");
+      dateText.textContent = d.date;
+      const countText = document.createElement("span");
+      countText.className = "history-date-count";
+      countText.textContent = `${d.count || 0} 篇`;
+      btn.append(dateText, countText);
+      btn.addEventListener("click", () => showHistory(d.date));
+      section.appendChild(btn);
+    });
+    list.appendChild(section);
+  });
+  markSelectedHistoryDate();
+}
+
+async function loadHistory(force = false) {
+  if (historyLoaded && !force) return historyDigests;
+  try {
+    const h = await (await fetch("/api/history")).json();
+    historyDigests = h.digests || [];
+    historyLoaded = true;
+    $("historySummary").textContent = historyDigests.length
+      ? `共 ${historyDigests.length} 份日报`
+      : "暂无归档";
+    renderHistoryList($("historyFilter").value);
+  } catch {
+    historyDigests = [];
+    $("historySummary").textContent = "历史索引加载失败";
+    $("historyList").innerHTML = '<div class="history-list-empty">加载失败</div>';
+  }
+  return historyDigests;
+}
+
+function updateRoute(page, date = "") {
+  const url = page === "history"
+    ? `#history${date ? "/" + date : ""}`
+    : `${location.pathname}${location.search}`;
+  window.history.pushState(null, "", url);
+}
+
+function routeFromLocation() {
+  const match = location.hash.match(/^#history(?:\/(\d{4}-\d{2}-\d{2}))?$/);
+  return match ? { page: "history", date: match[1] || "" } : { page: "home", date: "" };
+}
+
+async function switchPage(page, date = "", updateUrl = true) {
+  currentPage = page === "history" ? "history" : "home";
+  const onHistory = currentPage === "history";
+  $("homeView").hidden = onHistory;
+  $("historyView").hidden = !onHistory;
+  $("homeTab").classList.toggle("active", !onHistory);
+  $("historyTab").classList.toggle("active", onHistory);
+  $("homeTab").setAttribute("aria-selected", onHistory ? "false" : "true");
+  $("historyTab").setAttribute("aria-selected", onHistory ? "true" : "false");
+
+  if (!onHistory) {
+    historyRequestId += 1;
+    cards = homeCards;
+    if (updateUrl) updateRoute("home");
+    if (running) attachStream();
+    else { updateBtn(); maybePoll(); }
+    return;
+  }
+
+  cards = historyCards;
+  detachStream();
+  await loadHistory();
+  if (currentPage !== "history") return;
+  const target = historyDigests.some(d => d.date === date)
+    ? date
+    : (historyDigests.some(d => d.date === selectedHistoryDate)
+        ? selectedHistoryDate
+        : (historyDigests[0]?.date || ""));
+  if (target) await showHistory(target, updateUrl);
+  else {
+    resetHistoryUI("暂无历史日报");
+    if (updateUrl) updateRoute("history");
+  }
+}
+
+async function showHistory(date, updateUrl = true) {
+  if (!date) return;
+  const requestId = ++historyRequestId;
+  selectedHistoryDate = date;
+  currentDate = date;
+  historyCards = {};
+  cards = historyCards;
+  currentCardsEl = null;
+  markSelectedHistoryDate();
+  resetHistoryUI("加载中…");
+  selectedHistoryDate = date;
+  markSelectedHistoryDate();
+  if (updateUrl) updateRoute("history", date);
+
+  try {
+    const d = await (await fetch("/api/digest/" + encodeURIComponent(date))).json();
+    if (requestId !== historyRequestId || currentPage !== "history") return;
+    if (d.error) throw new Error(d.error);
+    const papers = d.papers || [];
+    $("historyTitle").textContent = date;
+    $("historyMeta").textContent = `${papers.length} 篇论文${running ? " · 后台任务运行中" : ""}`;
+    $("historyEmailBtn").style.display = papers.length ? "" : "none";
+    $("historyEmpty").classList.add("hidden");
+    $("historyContent").classList.remove("hidden");
+    newDaySection(date, 1, 1);
+    if (d.trend) renderTrend(date, d.trend);
+    papers.forEach(p => {
+      makeCard({ ...p, date });
+      fillCard(p.short_id, p);
+    });
+    applyGrouping();
+    if (!papers.length) {
+      $("historyResults").innerHTML = '<div class="empty">这份日报没有入选论文。</div>';
+    }
+  } catch (e) {
+    resetHistoryUI(`加载失败：${e.message || "未知错误"}`);
+    selectedHistoryDate = date;
+    markSelectedHistoryDate();
+  }
 }
 
 // 把当前查看的这天日报按邮件格式发送
 async function emailDigest() {
-  const date = currentDate;
+  const viewingHistory = currentPage === "history";
+  const date = viewingHistory ? selectedHistoryDate : currentDate;
   if (!date) return;
-  const btn = $("emailDigestBtn");
+  const btn = viewingHistory ? $("historyEmailBtn") : $("emailDigestBtn");
   const old = btn.textContent;
   btn.disabled = true;
   btn.textContent = "发送中…";
   try {
     const r = await (await fetch(`/api/email_digest?date=${encodeURIComponent(date)}`)).json();
     if (r.error) {
-      log("邮件发送失败：" + r.error, true);
+      if (viewingHistory) $("historyMeta").textContent = `邮件发送失败：${r.error}`;
+      else log("邮件发送失败：" + r.error, true);
       btn.textContent = "✉ 发送失败";
     } else {
-      log(`✅ 已发送 ${r.date} 日报邮件至 ${(r.to || []).join(", ")}（${r.count} 篇）`);
+      if (viewingHistory) $("historyMeta").textContent = `${r.count} 篇论文 · 已发送至 ${(r.to || []).join(", ")}`;
+      else log(`✅ 已发送 ${r.date} 日报邮件至 ${(r.to || []).join(", ")}（${r.count} 篇）`);
       btn.textContent = "✉ 已发送";
     }
   } catch (e) {
-    log("邮件发送请求失败，请稍后重试", true);
+    if (viewingHistory) $("historyMeta").textContent = "邮件发送请求失败，请稍后重试";
+    else log("邮件发送请求失败，请稍后重试", true);
     btn.textContent = "✉ 发送失败";
   }
   setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
@@ -939,7 +1222,7 @@ function clearSearch() {
   $("searchClear").style.display = "none";
   if (running) { attachStream(); return; }   // 后台在运行则回到实时进度
   resetUI();
-  log("已清除搜索，点上方「运行」开始，或从「历史日报」查看归档。");
+  log("已清除搜索，点上方「运行」开始，或切换到「历史」查看归档。");
 }
 
 // 页面加载时若后台正在运行，自动接回进度，并回填正在运行的日期/天数
@@ -953,26 +1236,37 @@ async function initStatus() {
       if (pr.days_back) $("runDaysBack").value = pr.days_back;
       if (pr.email) $("sendEmail").checked = true;
       updateWinHint();
-      attachStream();
+      if (currentPage === "home") attachStream();
+      else { updateBtn(); maybePoll(); }
     }
   } catch {}
   updateBtn();
 }
 
+$("homeTab").addEventListener("click", () => switchPage("home"));
+$("historyTab").addEventListener("click", () => switchPage("history"));
 $("runBtn").addEventListener("click", onRunClick);
 $("stopBtn").addEventListener("click", onStopClick);
 $("searchBtn").addEventListener("click", runSearch);
 $("searchClear").addEventListener("click", clearSearch);
 $("searchQ").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
-$("history").addEventListener("change", (e) => showHistory(e.target.value));
 $("emailDigestBtn").addEventListener("click", emailDigest);
+$("historyEmailBtn").addEventListener("click", emailDigest);
+$("historyFilter").addEventListener("input", (e) => renderHistoryList(e.target.value));
 $("runDate").addEventListener("change", updateWinHint);
 $("runDaysBack").addEventListener("input", updateWinHint);
 $("sortMode").addEventListener("change", applyGrouping);
+$("historySortMode").addEventListener("change", applyGrouping);
+window.addEventListener("popstate", () => {
+  const route = routeFromLocation();
+  switchPage(route.page, route.date, false);
+});
+
 initStages();
 loadConfig();
-loadHistory();
 loadUsage();
+const initialRoute = routeFromLocation();
+switchPage(initialRoute.page, initialRoute.date, false);
 initStatus();
 </script>
 </body>
