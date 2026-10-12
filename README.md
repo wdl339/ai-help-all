@@ -122,18 +122,17 @@ API 详情与申请方式见：https://claw.sjtu.edu.cn/guide/sjtu-api/
 
 | 调用名 | 模型 | 上下文 | 侧重 |
 |---|---|---|---|
-| `minimax-m2.7`（别名 `minimax`） | MiniMax-M2.7（230B） | 192k | 强；**思考模型**，质量高、擅长智能体任务（**默认筛选/总结模型**，需较大 `max_tokens`） |
-| `deepseek-chat` | DeepSeek V4 Flash 常规（284B） | 256k | 通用文本处理 |
-| `deepseek-reasoner` | DeepSeek V4 Flash 思考（284B） | 256k | 复杂逻辑深度推理（**不接受 temperature**） |
-| `qwen3.6-27b`（别名 `qwen`） | Qwen3.6-27B（27B） | 256k | 多模态（视觉+文本）；最快，备选筛选模型 |
+| `deepseek-chat` | DeepSeek V4 Flash 常规（284B） | 512k | 通用文本处理（**默认筛选/总结模型**） |
+| `deepseek-reasoner` | DeepSeek V4 Flash 思考（284B） | 512k | 复杂逻辑深度推理（**不接受 temperature**） |
+| `qwen3.8-27b`（别名 `qwen`） | Qwen3.8-27B（27B） | 256k | 多模态（视觉+文本） |
 
 > 用 `python main.py --list-models` 可查看 api-key 实际可调用的模型 id（部分模型有多个调用名，均可用；调用时请用返回的 `id`）。
 >
-> **思考模型**（`minimax-m2.7` / `deepseek-reasoner`）会先花 token 做内部推理再输出。用于**批量筛选**这类长 prompt 任务时，`max_tokens` 不够会被推理吃光、返回空——故筛选用 `minimax-m2.7` 时务必把 `filter_max_tokens` 留足（默认 8192），单批论文过多时可适当调小 `filter_batch_size`。
+> `deepseek-reasoner` 会先花 token 做内部推理再输出；若改用它，需为 `filter_max_tokens` 留足余量。默认使用 `deepseek-chat`，更适合批量结构化输出。
 
 ### 并发与速率限制
 
-API 额度：每分钟 10 次请求 / 每分钟 100000 token / 每周 10 亿 token。
+当前文档中的默认 API 额度：每分钟 10 次请求 / 每分钟 300000 token / 每周 10 亿 token；请以实际获批额度为准。
 
 - **并发**：筛选(各批次)与总结(各论文)用线程池并发提交（`llm.max_concurrency`，默认 8）。单次调用的网络/生成延迟远大于限速间隔，并发把这些延迟重叠起来，实测较串行快数倍。
 - **双限速器**：`llm_client.py` 内置滑动窗口限速器，同时约束每分钟请求数与 token；并发再高也不会超额度（超了自动等待）。
