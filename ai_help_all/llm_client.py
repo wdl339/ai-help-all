@@ -2,7 +2,7 @@
 
 参考 SJTU 交我算 API 文档 https://claw.sjtu.edu.cn/guide/sjtu-api/ 的约束：
 - base_url: https://models.sjtu.edu.cn/api/v1（OpenAI 兼容端点 /chat/completions）；
-- 额度：每分钟 10 次请求、每分钟 100000 token、每周 10 亿 token；
+- 默认额度：每分钟 10 次请求、每分钟 300000 token、每周 10 亿 token；
 - DeepSeek(deepseek-chat / deepseek-reasoner，V4 Flash) 请求中必须包含 user 角色消息；
 - deepseek-reasoner 为深度思考模式，不接受 temperature 等采样参数，
   且返回中带有独立的 reasoning_content 字段（真正答案仍在 content）。
@@ -22,7 +22,7 @@ _THINK_CLOSE = "</think>"
 
 
 def strip_reasoning(text: str) -> str:
-    """剥掉思考模型(如 minimax-m2.7)写进 content 的 <think>...</think> 推理块。
+    """兼容性处理：剥掉某些思考模型写进 content 的 <think>...</think> 推理块。
 
     这类模型不把推理放进独立的 reasoning_content，而是内联进 content，真正答案
     在 </think> 之后。推理块里常含 [0]/{...} 等括号，会污染下游 JSON/分节解析，

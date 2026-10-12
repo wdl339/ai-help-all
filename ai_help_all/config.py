@@ -36,13 +36,13 @@ class ArxivConfig:
 class LLMConfig:
     base_url: str = "https://models.sjtu.edu.cn/api/v1"
     api_key: str = ""
-    # 筛选模型：minimax-m2.7 做批量结构化打分（返回 JSON 数组）；思考模型，filter_max_tokens 需留足
-    filter_model: str = "minimax-m2.7"
-    # 总结模型：minimax-m2.7 总结质量高（注意它是思考模型，需较大 max_tokens）
-    summarize_model: str = "minimax-m2.7"
+    # 筛选模型：DeepSeek V4 Flash 常规模式，适合批量结构化打分（返回 JSON 数组）
+    filter_model: str = "deepseek-chat"
+    # 总结模型：DeepSeek V4 Flash 常规模式
+    summarize_model: str = "deepseek-chat"
     # 速率限制（申请额度：每分钟 10 次请求，留 1 余量）
     requests_per_minute: int = 9
-    # token 限速（申请额度：每分钟 100000 token，默认留约 10% 余量）
+    # token 限速（保守默认值；请按实际获批额度调整）
     tokens_per_minute: int = 90000
     # 并发线程数（同时在途的请求数；受上面的限速器约束，调大可隐藏网络延迟）
     max_concurrency: int = 8
@@ -54,11 +54,11 @@ class LLMConfig:
     filter_batch_size: int = 20
     # 筛选时每篇摘要截断到多少字符（控制单次请求 token；够覆盖绝大多数摘要）
     filter_abstract_chars: int = 1200
-    # 单次请求的最大输出 token（思考模型会先消耗 token 做推理，需留足余量）
+    # 筛选单次请求的最大输出 token
     filter_max_tokens: int = 8192
-    # 总结要产出 多段深度解读 + 摘要翻译 + 作者单位（思考模型还会先消耗 token 推理），故留足余量
+    # 总结要产出多段深度解读 + 摘要翻译 + 作者单位，故留足余量
     summarize_max_tokens: int = 8192
-    # 趋势综述的最大输出 token（思考模型需留足推理余量）
+    # 趋势综述的最大输出 token
     trend_max_tokens: int = 6144
     language: str = "中文"
 
